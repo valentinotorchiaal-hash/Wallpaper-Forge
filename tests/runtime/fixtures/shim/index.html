@@ -1,0 +1,10 @@
+<!doctype html><html><body><div id="o"></div><script>
+window.log = [];
+window.wallpaperPropertyListener = {
+  applyUserProperties: function (p) { log.push(['user', JSON.stringify(p)]); },
+  applyGeneralProperties: function (p) { log.push(['general', JSON.stringify(p)]); },
+  setPaused: function (x) { log.push(['paused', x]); },
+  userDirectoryFilesAddedOrChanged: function (k, f) { log.push(['dir', k, f.length]); }
+};
+window.wallpaperRequestRandomFileForProperty('imgs', function (k, f) { log.push(['random', k, f]); });
+</script></body></html>

@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Wallpaper Forge – escena</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas { position: absolute; left: 50%; top: 50%; transform-origin: 50% 50%; }
+  #fallback { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<img id="fallback" alt="">
+<script>
+/*
+ * Renderizador 2D de escenas convertidas por SceneConverter (C#).
+ * Coordenadas de la escena: origen abajo a la izquierda, Y hacia arriba, ángulos en radianes antihorarios.
+ */
+(function () {
+  var params = new URLSearchParams(location.search);
+  var dataUrl = params.get('data');
+  var previewUrl = params.get('preview');
+  var canvas = document.getElementById('c');
+  var ctx = canvas.getContext('2d');
+  var fallback = document.getElementById('fallback');
+  var scene = null, base = '', layers = [], sounds = [], animated = false, running = false, raf = 0;
+
+  function showFallback(reason) {
+    console.warn('[Wallpaper Forge] escena: usando la vista previa (' + reason + ')');
+    if (previewUrl) { fallback.src = previewUrl; fallback.style.display = 'block'; }
+    canvas.style.display = 'none';
+  }
+
+  function userState() { return (window.__wf && window.__wf.state.user) || {}; }
+  function truthy(v) { return !(v === false || v === 0 || v === '0' || v === 'false' || v == null); }
+
+  function applyBindings() {
+    var u = userState();
+    layers.forEach(function (l) {
+      if (l.def.visibleUser && u[l.def.visibleUser]) l.visible = truthy(u[l.def.visibleUser].value);
+      if (l.def.alphaUser && u[l.def.alphaUser]) l.alpha = Number(u[l.def.alphaUser].value);
+    });
+    sounds.forEach(function (s) {
+      if (s.def.visibleUser && u[s.def.visibleUser]) s.enabled = truthy(u[s.def.visibleUser].value);
+      updateSound(s);
+    });
+  }
+
+  function volume() {
+    var pb = window.__wf ? window.__wf.state.playback : { volume: 50 };
+    return Math.max(0, Math.min(1, (pb.volume == null ? 50 : pb.volume) / 100));
+  }
+  function updateSound(s) {
+    s.el.volume = Math.max(0, Math.min(1, volume() * (s.def.volume == null ? 1 : s.def.volume)));
+    var paused = window.__wf && window.__wf.state.paused;
+    if (s.enabled && !paused) { var p = s.el.play(); if (p && p.catch) p.catch(function () {}); }
+    else s.el.pause();
+  }
+
+  function fit() {
+    if (!scene) return;
+    var sw = window.innerWidth / scene.width, sh = window.innerHeight / scene.height;
+    var s = Math.max(sw, sh); // "cover", como Wallpaper Engine
+    canvas.style.transform = 'translate(-50%, -50%) scale(' + s + ')';
+  }
+
+  function loadImage(src) {
+    return new Promise(function (resolve) {
+      if (/\.mp4$/i.test(src)) {
+        var v = document.createElement('video');
+        v.src = base + src; v.loop = true; v.muted = true; v.autoplay = true; v.playsInline = true;
+        v.addEventListener('loadeddata', function () { resolve(v); }, { once: true });
+        v.addEventListener('error', function () { resolve(null); }, { once: true });
+        v.play().catch(function () {});
+        return;
+      }
+      var img = new Image();
+      img.onload = function () { resolve(img); };
+      img.onerror = function () { resolve(null); };
+      img.src = base + src;
+    });
+  }
+
+  function drawLayer(l, now) {
+    if (!l.visible || l.alpha <= 0 || !l.sheets[0]) return;
+    var d = l.def;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, l.alpha));
+    ctx.globalCompositeOperation = d.blend === 'additive' ? 'lighter' : 'source-over';
+
+    var src = l.sheets[0], sx = 0, sy = 0, sw = d.tex.w, sh = d.tex.h;
+    if (l.frames) {
+      var f = currentFrame(l, now);
+      src = l.sheets[f.i] || l.sheets[0];
+      sx = f.x; sy = f.y; sw = f.w; sh = f.h;
+    } else if (src instanceof HTMLVideoElement) {
+      sw = src.videoWidth; sh = src.videoHeight;
+    } else {
+      sw = src.naturalWidth; sh = src.naturalHeight;
+    }
+
+    if (d.fullscreen) {
+      ctx.drawImage(src, sx, sy, sw, sh, 0, 0, scene.width, scene.height);
+    } else {
+      ctx.translate(d.x, scene.height - d.y);
+      ctx.rotate(-d.angle);
+      ctx.scale(d.sx, d.sy);
+      ctx.drawImage(src, sx, sy, sw, sh, -d.w / 2, -d.h / 2, d.w, d.h);
+    }
+    ctx.restore();
+  }
+
+  function currentFrame(l, now) {
+    var t = ((now - l.start) / 1000) % l.total;
+    for (var i = 0; i < l.frames.length; i++) {
+      t -= l.frames[i].t;
+      if (t <= 0) return l.frames[i];
+    }
+    return l.frames[l.frames.length - 1];
+  }
+
+  function render(now) {
+    var c = scene.clearColor || [0, 0, 0];
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = 'rgb(' + c.map(function (v) { return Math.round(v * 255); }).join(',') + ')';
+    ctx.fillRect(0, 0, scene.width, scene.height);
+    for (var i = 0; i < layers.length; i++) drawLayer(layers[i], now || performance.now());
+  }
+
+  function loop(now) {
+    render(now);
+    if (running && animated) raf = requestAnimationFrame(loop);
+  }
+
+  function start() {
+    if (running) return;
+    running = true;
+    if (animated) raf = requestAnimationFrame(loop); else render();
+    sounds.forEach(updateSound);
+  }
+  function stop() {
+    running = false;
+    cancelAnimationFrame(raf);
+    sounds.forEach(updateSound);
+  }
+
+  window.addEventListener('wf-paused', function (e) { if (e.detail) stop(); else start(); });
+  window.addEventListener('wf-user-properties', function () { applyBindings(); if (!animated) render(); });
+  window.addEventListener('wf-playback', function () { sounds.forEach(updateSound); });
+  window.addEventListener('resize', fit);
+
+  function boot() {
+    scene = window.__WF_SCENE;
+    if (!scene) return showFallback('no hay datos');
+    canvas.width = scene.width;
+    canvas.height = scene.height;
+    fit();
+
+    var pending = scene.layers.map(function (def) {
+      var srcs = def.tex.sheets || [def.tex.src];
+      return Promise.all(srcs.map(loadImage)).then(function (imgs) {
+        var l = { def: def, sheets: imgs, visible: def.visible !== false, alpha: def.alpha == null ? 1 : def.alpha };
+        if (def.tex.frames && def.tex.frames.length) {
+          l.frames = def.tex.frames;
+          l.total = def.tex.frames.reduce(function (a, f) { return a + (f.t || 0.1); }, 0) || 1;
+          l.start = performance.now();
+          animated = true;
+        }
+        if (imgs[0] instanceof HTMLVideoElement) animated = true;
+        return l;
+      });
+    });
+
+    sounds = (scene.sounds || []).map(function (def) {
+      var el = new Audio(base + def.src);
+      el.loop = true;
+      return { def: def, el: el, enabled: true };
+    });
+
+    Promise.all(pending).then(function (ls) {
+      layers = ls.filter(function (l) { return l.sheets[0]; });
+      if (!layers.length) return showFallback('ninguna capa soportada');
+      applyBindings();
+      if (scene.warnings && scene.warnings.length)
+        console.info('[Wallpaper Forge] elementos no soportados:', scene.warnings);
+      if (!(window.__wf && window.__wf.state.paused)) start();
+    });
+  }
+
+  if (!dataUrl) { showFallback('falta el parámetro data'); return; }
+  base = dataUrl.substring(0, dataUrl.lastIndexOf('/') + 1);
+  var s = document.createElement('script');
+  s.src = dataUrl;
+  s.onload = boot;
+  s.onerror = function () { showFallback('no se pudo cargar ' + dataUrl); };
+  document.head.appendChild(s);
+})();
+</script>
+</body>
+</html>

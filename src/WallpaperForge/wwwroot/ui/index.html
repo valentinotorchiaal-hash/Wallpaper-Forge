@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wallpaper Forge</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <svg viewBox="0 0 64 64" class="logo" aria-hidden="true">
+      <defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c4dff"/><stop offset="1" stop-color="#00bedc"/></linearGradient></defs>
+      <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#lg)"/>
+      <path d="M8 52 26 26 38 42 44 34 58 52Z" fill="#fff" opacity=".92"/><circle cx="46" cy="16" r="6" fill="#fff" opacity=".92"/>
+    </svg>
+    <span>Wallpaper Forge</span>
+  </div>
+
+  <div class="search">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4a6 6 0 1 0 3.6 10.8l4.3 4.3 1.4-1.4-4.3-4.3A6 6 0 0 0 10 4Zm0 2a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z"/></svg>
+    <input id="search" type="search" placeholder="Buscar por nombre o etiqueta…" autocomplete="off">
+  </div>
+
+  <div class="actions">
+    <div class="dropdown">
+      <button class="btn primary" id="btnImport">+ Agregar</button>
+      <div class="menu" id="importMenu" hidden>
+        <button data-import="video">Importar video…</button>
+        <button data-import="web">Importar carpeta web (HTML)…</button>
+        <button data-import="folder">Agregar carpeta de wallpapers…</button>
+        <hr>
+        <button data-import="rescan">Volver a escanear la biblioteca</button>
+      </div>
+    </div>
+    <button class="icon-btn" id="btnPause" title="Pausar todo"></button>
+    <button class="icon-btn" id="btnMute" title="Silenciar"></button>
+    <button class="icon-btn" id="btnSettings" title="Configuración">
+      <svg viewBox="0 0 24 24"><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.6 7.6 0 0 0-1.7-1L15 3h-4l-.4 2.9a7.6 7.6 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.6 7.6 0 0 0 1.7 1L11 21h4l.4-2.9a7.6 7.6 0 0 0 1.7-1l2.5 1 2-3.5ZM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z" transform="translate(-1 0)"/></svg>
+    </button>
+  </div>
+</header>
+
+<section class="monitors" id="monitors" aria-label="Monitores"></section>
+
+<div class="toolbar">
+  <div class="chips" id="typeFilter" role="tablist">
+    <button class="chip active" data-type="">Todos</button>
+    <button class="chip" data-type="video">Video</button>
+    <button class="chip" data-type="web">Web</button>
+    <button class="chip" data-type="scene">Escena</button>
+  </div>
+  <div class="toolbar-right">
+    <label class="select-label">Origen
+      <select id="sourceFilter">
+        <option value="">Todos</option>
+        <option value="Local">Mis wallpapers</option>
+        <option value="SteamWorkshop">Steam Workshop</option>
+        <option value="WallpaperEngineProjects">Proyectos de Wallpaper Engine</option>
+      </select>
+    </label>
+    <label class="select-label">Orden
+      <select id="sort">
+        <option value="recent">Más recientes</option>
+        <option value="name">Nombre</option>
+        <option value="size">Tamaño</option>
+      </select>
+    </label>
+    <span class="count" id="count"></span>
+  </div>
+</div>
+
+<main class="layout">
+  <section class="grid" id="grid" aria-label="Biblioteca"></section>
+  <aside class="details" id="details" hidden></aside>
+</main>
+
+<div class="modal" id="settingsModal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <header><h2 id="settingsTitle">Configuración</h2><button class="icon-btn" data-close>✕</button></header>
+    <div class="modal-body" id="settingsBody"></div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script src="bridge.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
