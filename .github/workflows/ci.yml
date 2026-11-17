@@ -27,7 +27,15 @@ jobs:
         shell: pwsh
         run: |
           $p = Start-Process -FilePath publish\WallpaperForge.exe -ArgumentList '--selftest', "$PWD\selftest-result.json" -PassThru -Wait
-          if (Test-Path selftest-result.json) { Get-Content selftest-result.json } else { Write-Host "Sin resultado" }
+          if (Test-Path selftest-result.json) {
+            Get-Content selftest-result.json
+            $r = Get-Content selftest-result.json -Raw | ConvertFrom-Json
+            foreach ($c in $r.checks) {
+              $d = ($c.detail -replace "`r?`n", ' ')
+              if ($d.Length -gt 300) { $d = $d.Substring(0, 300) }
+              if ($c.ok) { Write-Host "::notice title=selftest OK::$($c.name) $d" } else { Write-Host "::error title=selftest FAIL::$($c.name) $d" }
+            }
+          } else { Write-Host "::error title=selftest::Sin resultado (exit $($p.ExitCode))" }
           Get-ChildItem "$env:LOCALAPPDATA\WallpaperForge\logs" -ErrorAction SilentlyContinue | Get-Content
           exit $p.ExitCode
       - uses: actions/upload-artifact@v4

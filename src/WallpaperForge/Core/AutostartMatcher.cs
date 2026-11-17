@@ -20,7 +20,7 @@ public static class AutostartMatcher
     };
 
     /// <summary>Procesos con nombre genérico (p. ej. "launcher") que sólo cuentan si su ruta coincide.</summary>
-    public static readonly string[] PathOnlyProcessNames = { "launcher" };
+    public static readonly string[] PathOnlyProcessNames = { "launcher", "ui32" };
 
     /// <summary>Devuelve el programa al que pertenece un comando/ruta, o null.</summary>
     public static CompetitorApp? MatchPath(string? commandOrPath)

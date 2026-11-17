@@ -27,6 +27,8 @@ public class OtherAppsTests
         Assert.Equal("wallpaper-engine", AutostartMatcher.MatchProcess("launcher", @"C:\Steam\steamapps\common\wallpaper_engine\launcher.exe")?.Id);
         Assert.Equal("wallpaper-engine", AutostartMatcher.MatchProcess("wallpaper64", null)?.Id); // proceso elevado: sin ruta
         Assert.Equal("lively", AutostartMatcher.MatchProcess("Lively", null)?.Id);
+        Assert.Null(AutostartMatcher.MatchProcess("ui32", @"C:\Tools\ui32.exe"));
+        Assert.Equal("wallpaper-engine", AutostartMatcher.MatchProcess("ui32", @"C:\Steam\steamapps\common\wallpaper_engine\bin\ui32.exe")?.Id);
         Assert.Null(AutostartMatcher.MatchProcess("explorer", @"C:\Windows\explorer.exe"));
     }
 

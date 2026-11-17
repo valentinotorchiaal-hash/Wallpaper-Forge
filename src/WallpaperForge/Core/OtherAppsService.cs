@@ -97,7 +97,14 @@ public sealed class OtherAppsService : IDisposable
             {
                 foreach (var p in Process.GetProcessesByName(name))
                 {
-                    using (p) running.Add(new RunningCompetitor(app.Id, app.Name, p.Id, p.ProcessName, null));
+                    using (p)
+                    {
+                        string? path = null;
+                        try { path = p.MainModule?.FileName; } catch { /* elevado */ }
+                        // Nombres genéricos (ui32, launcher) sólo si la ruta es del programa.
+                        if (AutostartMatcher.MatchProcess(p.ProcessName, path) != null)
+                            running.Add(new RunningCompetitor(app.Id, app.Name, p.Id, p.ProcessName, path));
+                    }
                 }
             }
         }
