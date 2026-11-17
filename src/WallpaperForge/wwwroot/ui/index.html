@@ -26,7 +26,7 @@
     <div class="dropdown">
       <button class="btn primary" id="btnImport">+ Agregar</button>
       <div class="menu" id="importMenu" hidden>
-        <button data-import="video">Importar video…</button>
+        <button data-import="media">Importar videos, imágenes o GIF…</button>
         <button data-import="web">Importar carpeta web (HTML)…</button>
         <button data-import="folder">Agregar carpeta de wallpapers…</button>
         <hr>
@@ -49,6 +49,7 @@
     <button class="chip" data-type="video">Video</button>
     <button class="chip" data-type="web">Web</button>
     <button class="chip" data-type="scene">Escena</button>
+    <button class="chip" data-type="image">Imagen</button>
   </div>
   <div class="toolbar-right">
     <label class="select-label">Origen
@@ -81,6 +82,8 @@
     <div class="modal-body" id="settingsBody"></div>
   </div>
 </div>
+
+<div class="drop-overlay" id="dropOverlay" hidden><div>Soltá acá tus videos, imágenes o GIF</div></div>
 
 <div class="toasts" id="toasts" aria-live="polite"></div>
 

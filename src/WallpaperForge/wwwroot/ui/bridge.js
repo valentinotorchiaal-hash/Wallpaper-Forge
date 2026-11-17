@@ -22,6 +22,17 @@
     });
   }
 
+  // Envía archivos arrastrados: WebView2 le pasa a la app sus rutas reales.
+  function sendFiles(method, files) {
+    if (!host) return Mock.call(method, {});
+    var id = nextId++;
+    return new Promise(function (resolve, reject) {
+      pending.set(id, { resolve: resolve, reject: reject });
+      if (host.postMessageWithAdditionalObjects) host.postMessageWithAdditionalObjects({ id: id, method: method, params: {} }, files);
+      else { pending.delete(id); reject(new Error('Esta versión de WebView2 no permite arrastrar archivos. Usá + Agregar.')); }
+    });
+  }
+
   if (host) {
     host.addEventListener('message', function (e) {
       var msg = e.data;
@@ -48,7 +59,9 @@
       { id: 'a4', title: 'Lluvia en la ventana', type: 'video', preview: svg('#0f2027', '#2c5364', 'video'), tags: ['Relajante'], source: 'SteamWorkshop', hasProperties: false, size: 120e6, supported: true },
       { id: 'a5', title: 'Ondas de audio', type: 'web', preview: svg('#8e2de2', '#4a00e0', 'web'), tags: ['Abstracto', 'Audio'], source: 'SteamWorkshop', hasProperties: true, size: 1e6, supported: true },
       { id: 'a6', title: 'Galaxia espiral', type: 'scene', preview: svg('#000428', '#004e92', 'escena'), tags: ['Espacio'], source: 'WallpaperEngineProjects', hasProperties: false, size: 12e6, supported: true },
+      { id: 'a7', title: 'Hojas verdes', type: 'image', preview: svg('#134e5e', '#71b280', 'imagen'), tags: ['verdes'], source: 'Local', hasProperties: false, size: 3e5, supported: true },
     ];
+    lib = lib.concat(window.__WF_DEMO_EXTRA || []);
     var state = {
       version: '0.1.0',
       paused: false,
@@ -57,7 +70,7 @@
         { id: '\\\\.\\DISPLAY2', index: 2, primary: false, x: 2560, y: 180, width: 1920, height: 1080, scale: 1, wallpaperId: 'a3', wallpaperTitle: 'Bosque al atardecer', covered: true },
       ],
       settings: {
-        pauseMode: 'Fullscreen', muted: false, pauseOnBattery: true, closeOtherWallpaperApps: false, startWithWindows: true, startMinimized: true, scanSteamWorkshop: true, fpsLimit: 60,
+        pauseMode: 'Fullscreen', muted: false, pauseOnBattery: true, closeOtherWallpaperApps: false, includeWallpaperEngineSamples: false, hiddenCount: 0, startWithWindows: true, startMinimized: true, scanSteamWorkshop: true, fpsLimit: 60,
         wallpaperEngineInstallPath: '', detectedWallpaperEngine: 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\wallpaper_engine',
         libraryFolders: ['D:\\Wallpapers'], defaultLibrary: 'C:\\Users\\vos\\Documents\\Wallpaper Forge\\wallpapers',
         pauseIgnoreProcesses: ['NVIDIA Share', 'nvcontainer', 'GameBar'],
@@ -79,6 +92,9 @@
         folder: 'C:\\wallpapers\\' + id, file: w.type === 'video' ? 'video.mp4' : (w.type === 'web' ? 'index.html' : 'scene.json'),
         workshopId: w.source === 'SteamWorkshop' ? '123456789' : null, rating: 'Everyone',
         playback: { volume: 50, rate: 1, fit: 'cover' },
+        preview: w.preview || w.video || '',
+        previewIsVideo: !w.preview && !!w.video,
+        looseFile: w.source === 'Local' && !w.hasProperties,
         properties: w.hasProperties ? props : [],
       });
     }
@@ -115,6 +131,12 @@
           case 'pickFile': return delay('C:\\Users\\vos\\Pictures\\fondo.jpg');
           case 'pickFolder': return delay('C:\\Users\\vos\\Pictures');
           case 'detectOtherApps': return delay(otherApps);
+          case 'hideWallpaper':
+            lib = lib.filter(function (x) { return x.id !== p.id; });
+            state.settings.hiddenCount = (state.settings.hiddenCount || 0) + 1;
+            return delay(JSON.parse(JSON.stringify(state)));
+          case 'unhideAll': state.settings.hiddenCount = 0; return delay(JSON.parse(JSON.stringify(state)));
+          case 'pasteFiles': return delay(null);
           case 'disableOtherApps':
             otherApps = { running: [], autostart: otherApps.autostart.map(function (a) { return Object.assign({}, a, { enabled: false }); }),
               disabledByUs: otherApps.autostart.map(function (a) { return { app: a.app, description: a.description }; }), guard: true };
@@ -127,5 +149,17 @@
     };
   })();
 
-  window.Bridge = { call: call, on: on, isDemo: !host };
+  // Sin WebView2 sólo se usan datos de ejemplo si se pide explícitamente (index.html?demo=1),
+  // para no confundirlos con una biblioteca real.
+  var demo = !host && /[?&]demo=1/.test(location.search);
+  if (!host && !demo) {
+    call = function () { return new Promise(function () {}); };
+    document.addEventListener('DOMContentLoaded', function () {
+      document.body.innerHTML = '<div style="margin:auto;max-width:520px;text-align:center;padding:40px">' +
+        '<h2>Abrí Wallpaper Forge desde su ícono</h2><p style="color:#9a9aab">Este archivo es la interfaz de la app y no funciona ' +
+        'abierto en un navegador. Si querés ver la interfaz con datos de ejemplo, agregá <code>?demo=1</code> a la dirección.</p></div>';
+    });
+  }
+
+  window.Bridge = { call: function (m, p) { return call(m, p); }, on: on, sendFiles: sendFiles, isDemo: demo };
 })();

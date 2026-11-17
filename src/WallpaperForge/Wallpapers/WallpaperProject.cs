@@ -5,7 +5,7 @@ using System.Text.Json.Nodes;
 
 namespace WallpaperForge.Wallpapers;
 
-public enum WallpaperType { Video, Web, Scene, Application, Unknown }
+public enum WallpaperType { Video, Web, Scene, Image, Application, Unknown }
 
 public enum WallpaperSource { Local, SteamWorkshop, WallpaperEngineProjects }
 
@@ -33,6 +33,11 @@ public sealed class WallpaperProject
 {
     public required string Id { get; init; }
     public required string Folder { get; init; }
+    /// <summary>
+    /// Clave única del wallpaper: la carpeta (proyectos con project.json o index.html) o la ruta del archivo
+    /// (videos, imágenes y GIF sueltos). Es lo que se guarda en la configuración.
+    /// </summary>
+    public required string Location { get; init; }
     public required WallpaperType Type { get; init; }
     public required string Title { get; init; }
     public string Description { get; init; } = "";
@@ -50,9 +55,11 @@ public sealed class WallpaperProject
     public string? EntryPath => EntryFile is null ? null : Path.Combine(Folder, EntryFile);
     public string? PreviewPath => PreviewFile is null ? null : Path.Combine(Folder, PreviewFile);
 
-    public static string MakeId(string folder)
+    public bool IsLooseFile => !string.Equals(Location, Folder, StringComparison.OrdinalIgnoreCase);
+
+    public static string MakeId(string location)
     {
-        var norm = Path.GetFullPath(folder).TrimEnd('\\', '/').ToLowerInvariant();
+        var norm = Path.GetFullPath(location).TrimEnd('\\', '/').ToLowerInvariant();
         var hash = SHA1.HashData(Encoding.UTF8.GetBytes(norm));
         return Convert.ToHexString(hash, 0, 8).ToLowerInvariant();
     }
@@ -63,15 +70,28 @@ public sealed class WallpaperProject
         "web" => WallpaperType.Web,
         "scene" => WallpaperType.Scene,
         "application" => WallpaperType.Application,
+        "image" => WallpaperType.Image,
         _ => WallpaperType.Unknown,
     };
 
     private static readonly string[] VideoExt = { ".mp4", ".webm", ".m4v", ".mov", ".mkv", ".avi", ".wmv" };
     public static bool IsVideoFile(string path) => VideoExt.Contains(Path.GetExtension(path).ToLowerInvariant());
 
-    /// <summary>Lee una carpeta de wallpaper. Devuelve null si no es un wallpaper reconocible.</summary>
-    public static WallpaperProject? Load(string folder, WallpaperSource source)
+    private static readonly string[] ImageExt = { ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif" };
+    public static bool IsImageFile(string path) => ImageExt.Contains(Path.GetExtension(path).ToLowerInvariant());
+
+    private static readonly HashSet<string> PreviewNames = new(StringComparer.OrdinalIgnoreCase)
+        { "preview.gif", "preview.jpg", "preview.png", "preview.webp", "preview.jpeg" };
+
+    /// <summary>true si el archivo puede ser un wallpaper por sí solo (video, imagen o GIF que no sea una vista previa).</summary>
+    public static bool IsStandaloneMedia(string path)
+        => (IsVideoFile(path) || IsImageFile(path)) && !PreviewNames.Contains(Path.GetFileName(path));
+
+    /// <summary>Lee un wallpaper desde una carpeta o desde un archivo suelto. Null si no es reconocible.</summary>
+    public static WallpaperProject? Load(string location, WallpaperSource source)
     {
+        if (File.Exists(location)) return FromLooseFile(location, source);
+        var folder = location;
         var projectFile = Path.Combine(folder, "project.json");
         if (File.Exists(projectFile))
         {
@@ -103,6 +123,7 @@ public sealed class WallpaperProject
             {
                 ".html" or ".htm" => WallpaperType.Web,
                 ".json" => WallpaperType.Scene,
+                _ when IsImageFile(file) => WallpaperType.Image,
                 ".exe" => WallpaperType.Application,
                 _ when IsVideoFile(file) => WallpaperType.Video,
                 _ => WallpaperType.Unknown,
@@ -132,6 +153,7 @@ public sealed class WallpaperProject
         return new WallpaperProject
         {
             Id = MakeId(folder),
+            Location = folder,
             Folder = folder,
             Type = type,
             Title = Str(json["title"]) is { Length: > 0 } t ? t : info.Name,
@@ -176,38 +198,45 @@ public sealed class WallpaperProject
         };
     }
 
-    /// <summary>Carpeta sin project.json: un video suelto o un index.html.</summary>
+    /// <summary>Carpeta sin project.json: es un wallpaper web si tiene index.html.</summary>
     private static WallpaperProject? Infer(string folder, WallpaperSource source)
     {
-        string? entry = null;
-        var type = WallpaperType.Unknown;
-        if (File.Exists(Path.Combine(folder, "index.html")))
-        {
-            entry = "index.html";
-            type = WallpaperType.Web;
-        }
-        else
-        {
-            var video = Directory.EnumerateFiles(folder).FirstOrDefault(IsVideoFile);
-            if (video != null)
-            {
-                entry = Path.GetFileName(video);
-                type = WallpaperType.Video;
-            }
-        }
-        if (entry == null) return null;
+        if (!File.Exists(Path.Combine(folder, "index.html"))) return null;
         var info = new DirectoryInfo(folder);
         return new WallpaperProject
         {
             Id = MakeId(folder),
+            Location = folder,
             Folder = folder,
-            Type = type,
+            Type = WallpaperType.Web,
             Title = info.Name,
-            EntryFile = entry,
+            EntryFile = "index.html",
             PreviewFile = FindPreview(folder),
             Source = source,
             Modified = info.LastWriteTime,
             SizeBytes = SafeSize(folder),
+        };
+    }
+
+    /// <summary>Un video, imagen o GIF suelto: cada archivo es un wallpaper.</summary>
+    private static WallpaperProject? FromLooseFile(string file, WallpaperSource source)
+    {
+        if (!IsVideoFile(file) && !IsImageFile(file)) return null;
+        var info = new FileInfo(file);
+        bool video = IsVideoFile(file);
+        return new WallpaperProject
+        {
+            Id = MakeId(file),
+            Location = file,
+            Folder = info.DirectoryName!,
+            Type = video ? WallpaperType.Video : WallpaperType.Image,
+            Title = Path.GetFileNameWithoutExtension(file),
+            EntryFile = info.Name,
+            PreviewFile = video ? null : info.Name, // las imágenes y GIF son su propia vista previa
+            Tags = new List<string> { info.Directory?.Name ?? "" }.Where(t => t.Length > 0).ToList(),
+            Source = source,
+            Modified = info.LastWriteTime,
+            SizeBytes = info.Length,
         };
     }
 

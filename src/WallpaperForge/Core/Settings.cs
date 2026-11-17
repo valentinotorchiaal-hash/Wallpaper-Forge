@@ -34,6 +34,12 @@ public sealed class AppSettings
     /// <summary>Buscar automáticamente wallpapers descargados de Steam Workshop (Wallpaper Engine).</summary>
     public bool ScanSteamWorkshop { get; set; } = true;
 
+    /// <summary>Mostrar los wallpapers de ejemplo que trae Wallpaper Engine (projects\defaultprojects).</summary>
+    public bool IncludeWallpaperEngineSamples { get; set; }
+
+    /// <summary>Wallpapers que el usuario quitó de la biblioteca (carpeta o archivo). No se borran del disco.</summary>
+    public List<string> HiddenWallpapers { get; set; } = new();
+
     /// <summary>Carpeta de instalación de Wallpaper Engine (para assets compartidos de escenas). Vacía = autodetectar.</summary>
     public string WallpaperEngineInstallPath { get; set; } = "";
 

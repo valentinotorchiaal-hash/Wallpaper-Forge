@@ -66,3 +66,9 @@ jobs:
         run: npm i --no-save playwright@1.48.2 && npx playwright install --with-deps chromium
       - name: Tests del runtime
         run: node tests/runtime/runtime-test.js scene-out
+      - name: Tests de la interfaz
+        run: |
+          mkdir -p media
+          ffmpeg -loglevel error -y -f lavfi -i testsrc=size=160x90:rate=10 -t 1 media/anim.gif
+          ffmpeg -loglevel error -y -f lavfi -i testsrc=size=320x180:rate=30 -t 3 -c:v libvpx-vp9 -b:v 200k media/clip.webm
+          node tests/runtime/ui-test.js media

@@ -184,6 +184,10 @@ public sealed class WallpaperWindow : Form
             case WallpaperType.Web:
                 url = WebViewEnvironment.FileUrl(project.EntryPath ?? Path.Combine(project.Folder, "index.html"));
                 break;
+            case WallpaperType.Image:
+                url = WebViewEnvironment.FileUrl(Path.Combine(AppPaths.RuntimeDir, "image.html"))
+                      + "?src=" + Uri.EscapeDataString(WebViewEnvironment.FileUrl(project.EntryPath!));
+                break;
             case WallpaperType.Video:
                 url = WebViewEnvironment.FileUrl(Path.Combine(AppPaths.RuntimeDir, "video.html"))
                       + "?src=" + Uri.EscapeDataString(WebViewEnvironment.FileUrl(project.EntryPath!));

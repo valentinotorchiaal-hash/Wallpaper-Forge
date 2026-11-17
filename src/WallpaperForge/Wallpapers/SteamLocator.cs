@@ -71,11 +71,11 @@ public static partial class SteamLocator
         return null;
     }
 
-    /// <summary>projects\myprojects y projects\defaultprojects de Wallpaper Engine.</summary>
-    public static IEnumerable<string> ProjectFolders(string? install)
+    /// <summary>projects\myprojects (tus proyectos) y, opcionalmente, projects\defaultprojects (los de ejemplo).</summary>
+    public static IEnumerable<string> ProjectFolders(string? install, bool includeSamples)
     {
         if (install == null) yield break;
-        foreach (var sub in new[] { "myprojects", "defaultprojects" })
+        foreach (var sub in includeSamples ? new[] { "myprojects", "defaultprojects" } : new[] { "myprojects" })
         {
             var p = Path.Combine(install, "projects", sub);
             if (Directory.Exists(p)) yield return p;

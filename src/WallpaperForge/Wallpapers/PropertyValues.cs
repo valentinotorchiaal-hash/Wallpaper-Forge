@@ -11,7 +11,7 @@ public static class PropertyValues
 
     public static JsonNode? Effective(WallpaperProject p, WallpaperProperty prop, AppSettings s)
     {
-        if (s.PropertyValues.TryGetValue(p.Folder, out var map) && map.TryGetValue(prop.Key, out var v))
+        if (s.PropertyValues.TryGetValue(p.Location, out var map) && map.TryGetValue(prop.Key, out var v))
             return v?.DeepClone();
         return prop.DefaultValue?.DeepClone();
     }
@@ -55,16 +55,16 @@ public static class PropertyValues
 
     public static void Set(AppSettings s, WallpaperProject p, string key, JsonNode? value)
     {
-        if (!s.PropertyValues.TryGetValue(p.Folder, out var map))
-            s.PropertyValues[p.Folder] = map = new Dictionary<string, JsonNode?>();
+        if (!s.PropertyValues.TryGetValue(p.Location, out var map))
+            s.PropertyValues[p.Location] = map = new Dictionary<string, JsonNode?>();
         map[key] = value?.DeepClone();
     }
 
-    public static void Reset(AppSettings s, WallpaperProject p) => s.PropertyValues.Remove(p.Folder);
+    public static void Reset(AppSettings s, WallpaperProject p) => s.PropertyValues.Remove(p.Location);
 
     public static PlaybackOptions Playback(AppSettings s, WallpaperProject p)
     {
-        if (!s.Playback.TryGetValue(p.Folder, out var o)) s.Playback[p.Folder] = o = new PlaybackOptions();
+        if (!s.Playback.TryGetValue(p.Location, out var o)) s.Playback[p.Location] = o = new PlaybackOptions();
         return o;
     }
 }

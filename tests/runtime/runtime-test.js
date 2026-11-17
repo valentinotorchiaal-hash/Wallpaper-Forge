@@ -65,6 +65,15 @@ function initScript(init) { return 'window.__WF_INIT = ' + JSON.stringify(init) 
   const v = await p.evaluate(() => { const v = document.getElementById('v'); return [v.style.objectFit, v.playbackRate, v.volume, document.getElementById('err').style.display]; });
   check(v[0] === 'contain' && v[1] === 1.5 && Math.abs(v[2] - 0.3) < 1e-6, 'opciones de reproducción ' + v);
   check(v[3] === 'block', 'muestra error si el video no existe');
+  // 4) Imagen / GIF: escalado
+  p = await b.newPage();
+  await p.addInitScript(initScript({ playback: { fit: 'contain' } }));
+  await p.goto('file://' + RT + '/image.html?src=' + encodeURIComponent('data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=='));
+  await p.waitForTimeout(200);
+  const img = await p.evaluate(() => { const i = document.getElementById('i'); return [i.style.objectFit, i.complete && i.naturalWidth]; });
+  check(img[0] === 'contain' && img[1] === 1, 'imagen cargada con escalado ' + img);
+  await p.evaluate(() => __wf.applyPlayback({ fit: 'stretch' }));
+  check(await p.evaluate(() => document.getElementById('i').style.objectFit) === 'fill', 'cambio de escalado en vivo');
   await b.close();
   process.exit(ok ? 0 : 1);
 })();

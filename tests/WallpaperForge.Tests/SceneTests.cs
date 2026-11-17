@@ -234,8 +234,11 @@ public class SceneTests : IDisposable
     [Fact]
     public void Project_InfersLooseVideo()
     {
-        File.WriteAllBytes(Path.Combine(_dir, "clip.mp4"), new byte[] { 0 });
-        var p = WallpaperProject.Load(_dir, WallpaperSource.Local)!;
+        // Una carpeta sin project.json no es un wallpaper; cada video suelto sí.
+        var clip = Path.Combine(_dir, "clip.mp4");
+        File.WriteAllBytes(clip, new byte[] { 0 });
+        Assert.Null(WallpaperProject.Load(_dir, WallpaperSource.Local));
+        var p = WallpaperProject.Load(clip, WallpaperSource.Local)!;
         Assert.Equal(WallpaperType.Video, p.Type);
         Assert.Equal("clip.mp4", p.EntryFile);
     }

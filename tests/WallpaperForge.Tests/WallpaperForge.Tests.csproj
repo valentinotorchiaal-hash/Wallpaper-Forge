@@ -16,6 +16,10 @@
     <Compile Include="..\..\src\WallpaperForge\Core\AutostartMatcher.cs" Link="Shared\AutostartMatcher.cs" />
     <Compile Include="..\..\src\WallpaperForge\Core\WallpaperEngineMigration.cs" Link="Shared\WallpaperEngineMigration.cs" />
     <Compile Include="..\..\src\WallpaperForge\Wallpapers\WallpaperProject.cs" Link="Shared\WallpaperProject.cs" />
+    <Compile Include="..\..\src\WallpaperForge\Wallpapers\Library.cs" Link="Shared\Library.cs" />
+    <Compile Include="..\..\src\WallpaperForge\Wallpapers\SteamLocator.cs" Link="Shared\SteamLocator.cs" />
+    <Compile Include="..\..\src\WallpaperForge\Core\Settings.cs" Link="Shared\Settings.cs" />
+    <Compile Include="..\..\src\WallpaperForge\Core\OtherWallpaperApps.cs" Link="Shared\OtherWallpaperApps.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="K4os.Compression.LZ4" Version="1.3.8" />

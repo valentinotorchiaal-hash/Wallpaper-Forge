@@ -34,7 +34,7 @@ public sealed class Bridge
         _window.PostJson(msg.ToJsonString());
     }
 
-    public async Task HandleAsync(string raw)
+    public async Task HandleAsync(string raw, List<string>? droppedPaths = null)
     {
         JsonNode? id = null;
         try
@@ -43,6 +43,8 @@ public sealed class Bridge
             id = msg["id"]?.DeepClone();
             var method = msg["method"]?.GetValue<string>() ?? "";
             var p = msg["params"] as JsonObject ?? new JsonObject();
+            if (droppedPaths is { Count: > 0 })
+                p["paths"] = new JsonArray(droppedPaths.Select(x => (JsonNode)x).ToArray());
             var result = await DispatchAsync(method, p);
             Reply(id, JsonSerializer.SerializeToNode(result, Json), null);
         }
@@ -188,13 +190,40 @@ public sealed class Bridge
             }
 
             case "importVideo":
+            case "importMedia":
             {
-                var file = PickFile("video");
-                if (file == null) return null;
-                var folder = await Task.Run(() => Library.ImportVideo(file));
-                await Task.Run(() => _m.Library.Scan(_m.Settings));
-                return _m.Library.FindByFolder(folder)?.Id;
+                var files = PickFiles();
+                if (files.Length == 0) return null;
+                return await ImportFilesAsync(files);
             }
+
+            case "importPaths":
+            {
+                // Archivos arrastrados o pegados en la ventana.
+                var paths = (p["paths"] as JsonArray)?.Select(x => x?.GetValue<string>()).Where(x => !string.IsNullOrEmpty(x)).ToArray() ?? Array.Empty<string?>();
+                return await ImportFilesAsync(paths!);
+            }
+
+            case "pasteFiles":
+            {
+                // Control+V con archivos copiados en el Explorador.
+                if (!Clipboard.ContainsFileDropList()) return null;
+                var list = Clipboard.GetFileDropList().Cast<string>().ToArray();
+                return list.Length == 0 ? null : await ImportFilesAsync(list);
+            }
+
+            case "hideWallpaper":
+            {
+                var project = Require(p);
+                _m.Hide(project);
+                return BuildState();
+            }
+
+            case "unhideAll":
+                _m.Settings.HiddenWallpapers.Clear();
+                SettingsStore.Save(_m.Settings);
+                await Task.Run(() => _m.Library.Scan(_m.Settings));
+                return BuildState();
 
             case "importWeb":
             {
@@ -204,13 +233,16 @@ public sealed class Bridge
                     throw new InvalidOperationException("La carpeta no tiene index.html ni project.json.");
                 var folder = await Task.Run(() => Library.ImportWebFolder(src));
                 await Task.Run(() => _m.Library.Scan(_m.Settings));
-                return _m.Library.FindByFolder(folder)?.Id;
+                return _m.Library.FindByLocation(folder)?.Id;
             }
 
             case "openFolder":
             {
                 var project = Require(p);
-                System.Diagnostics.Process.Start("explorer.exe", $"\"{project.Folder}\"");
+                // Archivo suelto: se abre la carpeta con el archivo seleccionado.
+                System.Diagnostics.Process.Start("explorer.exe", project.IsLooseFile
+                    ? $"/select,\"{project.Location}\""
+                    : $"\"{project.Folder}\"");
                 return true;
             }
 
@@ -244,13 +276,15 @@ public sealed class Bridge
             if (s.CloseOtherWallpaperApps) _otherApps.StartGuard();
         }
         if (p["scanSteamWorkshop"] is JsonValue ss) s.ScanSteamWorkshop = ss.GetValue<bool>();
+        if (p["includeWallpaperEngineSamples"] is JsonValue ws) s.IncludeWallpaperEngineSamples = ws.GetValue<bool>();
         if (p["fpsLimit"] is JsonValue fl) s.FpsLimit = Math.Clamp(fl.GetValue<int>(), 5, 240);
         if (p["wallpaperEngineInstallPath"] is JsonValue wp) s.WallpaperEngineInstallPath = wp.GetValue<string>() ?? "";
         if (p["pauseIgnoreProcesses"] is JsonArray ig)
             s.PauseIgnoreProcesses = ig.Select(x => x?.GetValue<string>()?.Trim()).Where(x => !string.IsNullOrEmpty(x))
                 .Select(x => x!.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? x[..^4] : x).ToList();
         SettingsStore.Save(s);
-        if (p["scanSteamWorkshop"] != null || p["wallpaperEngineInstallPath"] != null) _m.Library.Scan(s);
+        if (p["scanSteamWorkshop"] != null || p["wallpaperEngineInstallPath"] != null || p["includeWallpaperEngineSamples"] != null)
+            _m.Library.Scan(s);
     }
 
     private WallpaperProject Require(JsonObject p)
@@ -287,6 +321,8 @@ public sealed class Bridge
                 pauseOnBattery = s.PauseOnBattery,
                 closeOtherWallpaperApps = s.CloseOtherWallpaperApps,
                 scanSteamWorkshop = s.ScanSteamWorkshop,
+                includeWallpaperEngineSamples = s.IncludeWallpaperEngineSamples,
+                hiddenCount = s.HiddenWallpapers.Count,
                 fpsLimit = s.FpsLimit,
                 wallpaperEngineInstallPath = s.WallpaperEngineInstallPath,
                 detectedWallpaperEngine = SteamLocator.WallpaperEngineInstall(),
@@ -312,7 +348,9 @@ public sealed class Bridge
         hasProperties = p.Properties.Count > 0,
         modified = p.Modified,
         size = p.SizeBytes,
-        supported = p.Type is WallpaperType.Web or WallpaperType.Video or WallpaperType.Scene,
+        supported = WallpaperManager.IsSupported(p.Type),
+        // Video sin vista previa: la interfaz muestra un cuadro del propio video.
+        video = p.Type == WallpaperType.Video && p.PreviewPath == null ? MediaUrl(p.EntryPath) : null,
     };
 
     private object Details(WallpaperProject p)
@@ -324,8 +362,9 @@ public sealed class Bridge
             title = p.Title,
             description = p.Description,
             type = p.Type.ToString().ToLowerInvariant(),
-            preview = MediaUrl(p.PreviewPath),
-            previewIsVideo = p.PreviewPath != null && WallpaperProject.IsVideoFile(p.PreviewPath),
+            preview = MediaUrl(p.PreviewPath ?? (p.Type == WallpaperType.Video ? p.EntryPath : null)),
+            previewIsVideo = (p.PreviewPath ?? (p.Type == WallpaperType.Video ? p.EntryPath : null)) is string pv && WallpaperProject.IsVideoFile(pv),
+            looseFile = p.IsLooseFile,
             folder = p.Folder,
             file = p.EntryFile,
             tags = p.Tags,
@@ -349,6 +388,35 @@ public sealed class Bridge
                 options = prop.Options.Select(o => new { label = o.Label, value = o.Value }).ToList(),
             }).ToList(),
         };
+    }
+
+    private async Task<string?> ImportFilesAsync(string[] files)
+    {
+        var media = files.Where(f => File.Exists(f) && WallpaperProject.IsStandaloneMedia(f)).ToList();
+        var folders = files.Where(Directory.Exists).ToList();
+        if (media.Count == 0 && folders.Count == 0)
+            throw new InvalidOperationException("No hay videos, imágenes ni GIF compatibles en lo que elegiste.");
+        var imported = await Task.Run(() => Library.ImportMedia(media));
+        foreach (var f in folders)
+        {
+            // Una carpeta arrastrada se agrega como carpeta de biblioteca (no se copia).
+            if (!_m.Settings.LibraryFolders.Contains(f, StringComparer.OrdinalIgnoreCase)) _m.Settings.LibraryFolders.Add(f);
+        }
+        if (folders.Count > 0) SettingsStore.Save(_m.Settings);
+        await Task.Run(() => _m.Library.Scan(_m.Settings));
+        return imported.Select(x => _m.Library.FindByLocation(x)?.Id).FirstOrDefault(x => x != null)
+               ?? (folders.Count > 0 ? "" : null);
+    }
+
+    private string[] PickFiles()
+    {
+        using var dlg = new OpenFileDialog
+        {
+            Title = "Elegí videos, imágenes o GIF",
+            Multiselect = true,
+            Filter = "Videos, imágenes y GIF|*.mp4;*.webm;*.m4v;*.mov;*.mkv;*.avi;*.wmv;*.jpg;*.jpeg;*.png;*.gif;*.webp;*.bmp;*.avif|Todos los archivos|*.*",
+        };
+        return dlg.ShowDialog(_window) == DialogResult.OK ? dlg.FileNames : Array.Empty<string>();
     }
 
     private string? PickFile(string kind)

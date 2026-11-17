@@ -9,7 +9,7 @@
   var target = 'all';        // monitor destino de "Aplicar"
   var filters = { text: '', type: '', source: '', sort: 'recent' };
 
-  var TYPE_LABEL = { video: 'Video', web: 'Web', scene: 'Escena', application: 'Aplicación', unknown: '?' };
+  var TYPE_LABEL = { video: 'Video', web: 'Web', scene: 'Escena', image: 'Imagen', application: 'Aplicación', unknown: '?' };
   var SOURCE_LABEL = { Local: 'Local', SteamWorkshop: 'Workshop', WallpaperEngineProjects: 'Wallpaper Engine' };
 
   var ICONS = {
@@ -72,9 +72,11 @@
     if (target !== 'all' && !state.monitors.some(function (m) { return m.id === target; })) target = 'all';
     renderMonitors();
     renderTopButtons();
-    renderGrid();
+    var key = state.monitors.map(function (m) { return m.wallpaperId; }).join('|');
+    if (key !== lastActiveKey) { lastActiveKey = key; renderGrid(); }
     if (selected) renderDetails();
   }
+  var lastActiveKey = null;
 
   function renderTopButtons() {
     var pb = $('#btnPause');
@@ -139,6 +141,110 @@
     box.appendChild(list);
   }
 
+  // ---------------- Miniaturas ----------------
+  // En la grilla todo es estático (un cuadro del GIF o del video): sólo se mueve al pasar el mouse.
+  // Así cientos de GIF y videos no consumen CPU ni memoria. Los cuadros se guardan en memoria.
+  var thumbCache = new Map();
+  var thumbObserver = 'IntersectionObserver' in window ? new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { thumbObserver.unobserve(en.target); loadThumb(en.target); }
+    });
+  }, { rootMargin: '300px' }) : null;
+
+  function thumbFor(w) {
+    var box = el('div', { class: 'thumb-media' });
+    box._w = w;
+    var cached = thumbCache.get(w.id);
+    if (cached) box.appendChild(el('img', { src: cached, alt: '' }));
+    else if (!w.preview && !w.video) box.appendChild(el('div', { class: 'noimg', text: TYPE_LABEL[w.type] }));
+    else if (thumbObserver) thumbObserver.observe(box);
+    else loadThumb(box);
+    return box;
+  }
+
+  function isAnimated(url) {
+    var path = decodeURIComponent(url || '').split('path=').pop();
+    return /\.(gif|webp)$/i.test(path);
+  }
+
+  function loadThumb(box) {
+    var w = box._w;
+    var src = w.preview || w.video;
+    var isVideo = !w.preview && !!w.video;
+    if (!isVideo && !isAnimated(src)) {
+      // Imagen fija: se usa directo.
+      box.appendChild(el('img', { src: src, alt: '', loading: 'lazy' }));
+      return;
+    }
+    capture(src, isVideo).then(function (dataUrl) {
+      if (dataUrl) { thumbCache.set(w.id, dataUrl); box.innerHTML = ''; box.appendChild(el('img', { src: dataUrl, alt: '' })); }
+      else { box.innerHTML = ''; box.appendChild(el('div', { class: 'noimg', text: TYPE_LABEL[w.type] })); }
+    });
+  }
+
+  // Toma un cuadro de un GIF o video y lo devuelve como JPEG (data URL). El elemento original se descarta.
+  function capture(src, isVideo) {
+    return new Promise(function (resolve) {
+      var done = false;
+      function finish(media, mw, mh) {
+        if (done) return; done = true;
+        try {
+          var scale = Math.min(1, 480 / (mw || 480));
+          var c = document.createElement('canvas');
+          c.width = Math.max(1, Math.round((mw || 480) * scale));
+          c.height = Math.max(1, Math.round((mh || 270) * scale));
+          c.getContext('2d').drawImage(media, 0, 0, c.width, c.height);
+          resolve(c.toDataURL('image/jpeg', 0.82));
+        } catch (e) { resolve(null); }
+        if (isVideo) { media.removeAttribute('src'); media.load(); }
+      }
+      setTimeout(function () { if (!done) { done = true; resolve(null); } }, 15000);
+      if (isVideo) {
+        var v = document.createElement('video');
+        v.crossOrigin = 'anonymous'; v.muted = true; v.preload = 'auto'; v.playsInline = true;
+        v.addEventListener('loadedmetadata', function () { v.currentTime = Math.min(1, (v.duration || 2) / 3); }, { once: true });
+        v.addEventListener('seeked', function () {
+          // Se espera a que el cuadro esté realmente dibujado (si no, sale negro).
+          // (finish ignora la segunda llamada; el respaldo por tiempo evita quedar sin miniatura).
+          if (v.requestVideoFrameCallback) {
+            v.requestVideoFrameCallback(function () { finish(v, v.videoWidth, v.videoHeight); });
+            v.play().catch(function () {});
+          }
+          setTimeout(function () { finish(v, v.videoWidth, v.videoHeight); }, 600);
+        }, { once: true });
+        v.addEventListener('error', function () { if (!done) { done = true; resolve(null); } }, { once: true });
+        v.src = src;
+      } else {
+        var img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = function () { finish(img, img.naturalWidth, img.naturalHeight); };
+        img.onerror = function () { if (!done) { done = true; resolve(null); } };
+        img.src = src;
+      }
+    });
+  }
+
+  // Al pasar el mouse: el GIF o el video se reproducen; al salir, se descartan.
+  function hoverPlay(card, w) {
+    var live = null;
+    card.addEventListener('mouseenter', function () {
+      var media = card.querySelector('.thumb-media');
+      if (!media || live) return;
+      if (w.video && !w.preview) {
+        live = el('video', { class: 'live', src: w.video, muted: true, autoplay: true, loop: true, playsinline: true });
+        live.muted = true;
+      } else if (w.preview && isAnimated(w.preview)) {
+        live = el('img', { class: 'live', src: w.preview, alt: '' });
+      }
+      if (live) media.appendChild(live);
+    });
+    card.addEventListener('mouseleave', function () {
+      if (!live) return;
+      if (live.tagName === 'VIDEO') { live.pause(); live.removeAttribute('src'); live.load(); }
+      live.remove(); live = null;
+    });
+  }
+
   // ---------------- Biblioteca ----------------
   function filtered() {
     var q = filters.text.trim().toLowerCase();
@@ -163,8 +269,8 @@
       grid.appendChild(el('div', { class: 'empty' }, [
         el('h3', { text: library.length ? 'Nada coincide con la búsqueda' : 'Tu biblioteca está vacía' }),
         el('p', { class: 'muted', text: library.length ? 'Probá con otro nombre, etiqueta o filtro.' :
-          'Importá un video, una carpeta web o agregá la carpeta donde guardás tus wallpapers. Si tenés Wallpaper Engine, los wallpapers del Workshop aparecen solos.' }),
-        library.length ? null : el('button', { class: 'btn primary', text: 'Importar video…', onclick: function () { doImport('video'); } }),
+          'Arrastrá acá videos, imágenes o GIF (o pegalos con Ctrl+V), o agregá la carpeta donde los guardás. Si tenés Wallpaper Engine, los wallpapers del Workshop aparecen solos.' }),
+        library.length ? null : el('button', { class: 'btn primary', text: 'Importar videos, imágenes o GIF…', onclick: function () { doImport('media'); } }),
       ]));
       return;
     }
@@ -178,7 +284,7 @@
         onkeydown: function (e) { if (e.key === 'Enter') select(w.id); },
       }, [
         el('div', { class: 'thumb' }, [
-          w.preview ? el('img', { src: w.preview, loading: 'lazy', alt: '' }) : el('div', { class: 'noimg', text: TYPE_LABEL[w.type] }),
+          thumbFor(w),
           el('span', { class: 'badge type-' + w.type, text: TYPE_LABEL[w.type] || w.type }),
           activeIds.indexOf(w.id) >= 0 ? el('span', { class: 'badge active', text: 'En uso' }) : null,
           w.supported ? el('button', { class: 'quick-apply', text: 'Aplicar', onclick: function (e) { e.stopPropagation(); apply(w.id); } })
@@ -189,6 +295,7 @@
           el('span', { class: 'muted', text: [SOURCE_LABEL[w.source] || w.source, fmtSize(w.size)].filter(Boolean).join(' · ') }),
         ]),
       ]);
+      hoverPlay(card, w);
       grid.appendChild(card);
     });
   }
@@ -227,14 +334,14 @@
       el('button', { class: 'icon-btn close', title: 'Cerrar', text: '✕', onclick: function () { selected = null; renderDetails(); renderGrid(); } }),
     ]);
     var preview = el('div', { class: 'big-preview' }, [
-      d.preview ? (d.previewIsVideo ? el('video', { src: d.preview, autoplay: true, loop: true, muted: true }) : el('img', { src: d.preview, alt: '' }))
+      d.preview ? (d.previewIsVideo ? el('video', { src: d.preview, autoplay: true, loop: true, muted: true, playsinline: true }) : el('img', { src: d.preview, alt: '' }))
                 : el('div', { class: 'noimg', text: TYPE_LABEL[d.type] }),
     ]);
 
     var targetLabel = target === 'all' ? 'todos los monitores' : 'monitor ' + monitorIndex(target);
     var applyBtn = el('button', {
       class: 'btn primary wide', text: 'Aplicar en ' + targetLabel,
-      disabled: ['video', 'web', 'scene'].indexOf(d.type) < 0,
+      disabled: ['video', 'web', 'scene', 'image'].indexOf(d.type) < 0,
       onclick: function () { apply(d.id); },
     });
 
@@ -244,10 +351,19 @@
         .concat((d.tags || []).map(function (t) { return el('span', { class: 'tag', text: t }); }))),
       d.description ? el('p', { class: 'desc', text: stripHtml(d.description) }) : null,
       d.type === 'scene' ? el('p', { class: 'note', text: 'Escenas: soporte parcial. Se muestran las capas de imagen, texturas animadas y sonidos; los efectos, partículas y textos todavía no.' }) : null,
-      ['video', 'web', 'scene'].indexOf(d.type) < 0 ? el('p', { class: 'note warn', text: 'Este tipo de wallpaper todavía no está soportado.' }) : null,
+      ['video', 'web', 'scene', 'image'].indexOf(d.type) < 0 ? el('p', { class: 'note warn', text: 'Este tipo de wallpaper todavía no está soportado.' }) : null,
       applyBtn,
       el('div', { class: 'row-actions' }, [
-        el('button', { class: 'btn ghost', text: 'Abrir carpeta', onclick: function () { call('openFolder', { id: d.id }); } }),
+        el('button', { class: 'btn ghost', text: d.looseFile ? 'Mostrar archivo' : 'Abrir carpeta', onclick: function () { call('openFolder', { id: d.id }); } }),
+        el('button', { class: 'btn ghost danger', text: 'Quitar de la biblioteca', title: 'No borra el archivo del disco', onclick: function () {
+          if (!confirm('¿Quitar "' + d.title + '" de la biblioteca?\n\nNo se borra del disco. Se puede volver a mostrar desde Configuración → Biblioteca.')) return;
+          var id = d.id;
+          call('hideWallpaper', { id: id }).then(function (s) {
+            library = library.filter(function (x) { return x.id !== id; });
+            selected = null; renderDetails(); lastActiveKey = null; setState(s);
+            toast('Quitado de la biblioteca');
+          });
+        } }),
         d.properties.length ? el('button', { class: 'btn ghost', text: 'Restablecer', onclick: function () {
           call('resetProperties', { id: d.id }).then(function (nd) { selected = nd; renderDetails(); toast('Propiedades restablecidas'); });
         } }) : null,
@@ -271,6 +387,16 @@
     var pb = d.playback;
     var send = debounce(function () { call('setPlayback', Object.assign({ id: d.id }, pb)); }, 150);
     var sec = el('section', { class: 'props' }, [el('h3', { text: 'Reproducción' })]);
+    if (d.type === 'image') {
+      var fitSel = el('select', { onchange: function () { pb.fit = fitSel.value; send(); } }, [
+        el('option', { value: 'cover', text: 'Rellenar (recorta)' }),
+        el('option', { value: 'contain', text: 'Ajustar (con bordes)' }),
+        el('option', { value: 'stretch', text: 'Estirar' }),
+      ]);
+      fitSel.value = pb.fit;
+      sec.appendChild(field('Escalado', fitSel));
+      return sec;
+    }
     if (d.type !== 'web') {
       sec.appendChild(field('Volumen', sliderInput(pb.volume, 0, 100, 1, false, function (v) { pb.volume = v; send(); })));
     } else {
@@ -432,14 +558,14 @@
 
   // ---------------- Importar ----------------
   function doImport(kind) {
-    var map = { video: 'importVideo', web: 'importWeb', folder: 'addLibraryFolder' };
+    var map = { media: 'importMedia', video: 'importMedia', web: 'importWeb', folder: 'addLibraryFolder', paste: 'pasteFiles' };
     if (kind === 'rescan') return refreshLibrary(true).then(function () { toast('Biblioteca actualizada'); });
     return call(map[kind]).then(function (res) {
       if (res == null) return;
       if (kind === 'folder') setState(res);
       return refreshLibrary(false).then(function () {
-        if (typeof res === 'string') select(res);
-        toast(kind === 'folder' ? 'Carpeta agregada' : 'Wallpaper importado');
+        if (typeof res === 'string' && res) select(res);
+        toast(kind === 'folder' ? 'Carpeta agregada' : 'Agregado a la biblioteca');
       });
     });
   }
@@ -499,6 +625,11 @@
       el('button', { class: 'btn ghost', text: 'Agregar carpeta…', onclick: function () { doImport('folder').then(openSettings); } }),
       el('div', { class: 'field inline' }, [el('label', { text: 'Incluir wallpapers de Steam Workshop (Wallpaper Engine)' }),
         toggle(s.scanSteamWorkshop, function (v) { save({ scanSteamWorkshop: v }).then(function () { refreshLibrary(false); }); })]),
+      el('div', { class: 'field inline' }, [el('label', { text: 'Mostrar los wallpapers de ejemplo de Wallpaper Engine' }),
+        toggle(s.includeWallpaperEngineSamples, function (v) { save({ includeWallpaperEngineSamples: v }).then(function () { refreshLibrary(false); }); })]),
+      s.hiddenCount ? el('button', { class: 'btn ghost small', text: 'Volver a mostrar los wallpapers quitados (' + s.hiddenCount + ')', onclick: function () {
+        call('unhideAll').then(function (st) { setState(st); refreshLibrary(false); openSettings(); toast('Se volvieron a mostrar'); });
+      } }) : null,
       field('Carpeta de Wallpaper Engine (para assets de escenas)', weInput),
       el('h3', { text: 'Otros programas de fondos' }),
       otherAppsSection(),
@@ -584,6 +715,39 @@
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') { $('#settingsModal').hidden = true; menu.hidden = true; }
       if (e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') { e.preventDefault(); $('#search').focus(); }
+    });
+
+    // Arrastrar archivos o carpetas a la ventana.
+    var drop = $('#dropOverlay');
+    var dragDepth = 0;
+    window.addEventListener('dragenter', function (e) {
+      if (!e.dataTransfer || Array.prototype.indexOf.call(e.dataTransfer.types, 'Files') < 0) return;
+      dragDepth++; drop.hidden = false;
+    });
+    window.addEventListener('dragleave', function () { if (--dragDepth <= 0) { dragDepth = 0; drop.hidden = true; } });
+    window.addEventListener('dragover', function (e) { e.preventDefault(); });
+    window.addEventListener('drop', function (e) {
+      e.preventDefault(); dragDepth = 0; drop.hidden = true;
+      var files = e.dataTransfer && e.dataTransfer.files;
+      if (!files || !files.length) return;
+      Bridge.sendFiles('importPaths', files).then(function (res) {
+        return refreshLibrary(false).then(function () { if (res) select(res); toast('Agregado a la biblioteca'); });
+      }).catch(function (err) { toast(err.message || String(err), 'error'); });
+    });
+    // Ctrl+V con archivos copiados en el Explorador.
+    document.addEventListener('keydown', function (e) {
+      var tag = document.activeElement && document.activeElement.tagName;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v' && tag !== 'INPUT' && tag !== 'TEXTAREA') {
+        e.preventDefault();
+        call('pasteFiles').then(function (res) {
+          if (res == null) { toast('No hay archivos copiados. Copiá videos, imágenes o GIF en el Explorador y volvé a pegar.'); return; }
+          refreshLibrary(false).then(function () { if (res) select(res); toast('Agregado a la biblioteca'); });
+        });
+      }
+    });
+    // Al volver a mostrar la ventana (desde la bandeja) se refresca todo.
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible') { call('getState').then(function (st) { lastActiveKey = null; setState(st); }); refreshLibrary(false); }
     });
 
     Bridge.on('state', setState);

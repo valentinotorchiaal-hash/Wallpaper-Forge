@@ -60,6 +60,13 @@ public sealed class WallpaperManager : IDisposable
 
         foreach (var (monitorId, folder) in Settings.Assignments.ToList())
         {
+            if (IsUnwanted(folder))
+            {
+                Log.Info($"Se quita de {monitorId} un wallpaper oculto o de ejemplo: {folder}");
+                Settings.Assignments.Remove(monitorId);
+                SettingsStore.Save(Settings);
+                continue;
+            }
             if (CurrentMonitors.All(m => m.Id != monitorId)) continue;
             var project = WallpaperProject.Load(folder, WallpaperSource.Local);
             if (project == null)
@@ -114,7 +121,7 @@ public sealed class WallpaperManager : IDisposable
     {
         var monitor = CurrentMonitors.FirstOrDefault(m => m.Id == monitorId)
                       ?? throw new ArgumentException($"Monitor desconocido: {monitorId}");
-        if (project.Type is not (WallpaperType.Web or WallpaperType.Video or WallpaperType.Scene))
+        if (!IsSupported(project.Type))
             throw new NotSupportedException($"Los wallpapers de tipo {project.Type} todavía no están soportados.");
 
         if (!_windows.TryGetValue(monitorId, out var window) || !window.IsAlive)
@@ -131,9 +138,32 @@ public sealed class WallpaperManager : IDisposable
 
         if (save)
         {
-            Settings.Assignments[monitorId] = project.Folder;
+            Settings.Assignments[monitorId] = project.Location;
             SettingsStore.Save(Settings);
         }
+    }
+
+    public static bool IsSupported(WallpaperType t)
+        => t is WallpaperType.Web or WallpaperType.Video or WallpaperType.Scene or WallpaperType.Image;
+
+    /// <summary>Quita un wallpaper de la biblioteca (no lo borra del disco) y de los monitores que lo usan.</summary>
+    public void Hide(WallpaperProject project)
+    {
+        if (!Settings.HiddenWallpapers.Contains(project.Location, StringComparer.OrdinalIgnoreCase))
+            Settings.HiddenWallpapers.Add(project.Location);
+        foreach (var (id, w) in _windows.ToList())
+            if (w.Project?.Id == project.Id) Clear(id);
+        SettingsStore.Save(Settings);
+        Library.Scan(Settings);
+        StateChanged?.Invoke();
+    }
+
+    /// <summary>Asignaciones a wallpapers ocultos o a los ejemplos de Wallpaper Engine (si están desactivados) se descartan.</summary>
+    private bool IsUnwanted(string location)
+    {
+        if (Settings.HiddenWallpapers.Contains(location, StringComparer.OrdinalIgnoreCase)) return true;
+        return !Settings.IncludeWallpaperEngineSamples &&
+               location.Replace('/', '\\').Contains(@"\wallpaper_engine\projects\defaultprojects\", StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task ApplyToAllAsync(WallpaperProject project)
@@ -169,7 +199,7 @@ public sealed class WallpaperManager : IDisposable
 
     public async Task SetPlaybackAsync(WallpaperProject project, PlaybackOptions o)
     {
-        Settings.Playback[project.Folder] = o;
+        Settings.Playback[project.Location] = o;
         SettingsStore.Save(Settings);
         foreach (var w in WindowsShowing(project)) await w.ApplyPlaybackAsync(o);
     }
@@ -344,7 +374,7 @@ public sealed class WallpaperManager : IDisposable
             foreach (var (id, folder) in Settings.Assignments.ToList())
             {
                 if (_windows.ContainsKey(id) || CurrentMonitors.All(m => m.Id != id)) continue;
-                var p = Library.FindByFolder(folder) ?? WallpaperProject.Load(folder, WallpaperSource.Local);
+                var p = Library.FindByLocation(folder) ?? WallpaperProject.Load(folder, WallpaperSource.Local);
                 if (p != null)
                 {
                     try { await ApplyCoreAsync(p, id, save: false); }

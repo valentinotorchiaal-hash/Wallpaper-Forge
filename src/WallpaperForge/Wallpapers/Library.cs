@@ -17,7 +17,7 @@ public sealed class Library
 
     public WallpaperProject? Get(string id) { lock (_gate) return _items.GetValueOrDefault(id); }
 
-    public WallpaperProject? FindByFolder(string folder) => Get(WallpaperProject.MakeId(folder));
+    public WallpaperProject? FindByLocation(string location) => Get(WallpaperProject.MakeId(location));
 
     public void Scan(AppSettings settings)
     {
@@ -32,20 +32,18 @@ public sealed class Library
             {
                 roots.AddRange(SteamLocator.WorkshopFolders().Select(f => (f, WallpaperSource.SteamWorkshop)));
                 var install = ResolveWallpaperEngineInstall(settings);
-                roots.AddRange(SteamLocator.ProjectFolders(install).Select(f => (f, WallpaperSource.WallpaperEngineProjects)));
+                roots.AddRange(SteamLocator.ProjectFolders(install, settings.IncludeWallpaperEngineSamples).Select(f => (f, WallpaperSource.WallpaperEngineProjects)));
             }
             catch (Exception ex) { Log.Warn("Error buscando Steam: " + ex.Message); }
         }
 
+        var hidden = new HashSet<string>(settings.HiddenWallpapers, StringComparer.OrdinalIgnoreCase);
         var found = new Dictionary<string, WallpaperProject>();
         foreach (var (root, src) in roots)
         {
-            // La raíz puede ser un wallpaper en sí misma (carpeta agregada a mano).
-            TryAdd(found, root, src);
-            IEnumerable<string> subdirs;
-            try { subdirs = Directory.EnumerateDirectories(root); }
-            catch { continue; }
-            foreach (var dir in subdirs) TryAdd(found, dir, src);
+            // Steam Workshop: una carpeta por wallpaper. Carpetas propias: se busca en subcarpetas (hasta 4 niveles).
+            int depth = src == WallpaperSource.Local ? 4 : 1;
+            ScanDirectory(found, root, src, depth, hidden);
         }
 
         lock (_gate)
@@ -53,13 +51,52 @@ public sealed class Library
             _items = found;
             Roots = roots.Select(r => Path.GetFullPath(r.path)).ToList();
         }
-        Log.Info($"Biblioteca: {found.Count} wallpapers en {roots.Count} carpetas");
+        Log.Info($"Biblioteca: {found.Count} wallpapers en {roots.Count} carpetas ({hidden.Count} ocultos)");
     }
 
-    private static void TryAdd(Dictionary<string, WallpaperProject> found, string dir, WallpaperSource src)
+    private const int MaxItems = 20_000;
+
+    /// <summary>
+    /// Una carpeta con project.json (o index.html) es un wallpaper y no se sigue bajando.
+    /// Si no, cada video, imagen o GIF suelto es un wallpaper, y se revisan las subcarpetas.
+    /// </summary>
+    internal static void ScanDirectory(Dictionary<string, WallpaperProject> found, string dir, WallpaperSource src,
+        int depth, HashSet<string> hidden)
     {
-        var p = WallpaperProject.Load(dir, src);
-        if (p != null && p.Type != WallpaperType.Unknown) found[p.Id] = p;
+        if (found.Count >= MaxItems) return;
+        try
+        {
+            var name = Path.GetFileName(dir.TrimEnd('\\', '/'));
+            if (name.StartsWith('.') || name.Equals("node_modules", StringComparison.OrdinalIgnoreCase)) return;
+
+            if (File.Exists(Path.Combine(dir, "project.json")) || File.Exists(Path.Combine(dir, "index.html")))
+            {
+                Add(found, WallpaperProject.Load(dir, src), hidden);
+                return;
+            }
+
+            foreach (var file in Directory.EnumerateFiles(dir))
+                if (WallpaperProject.IsStandaloneMedia(file))
+                    Add(found, WallpaperProject.Load(file, src), hidden);
+
+            if (depth <= 0) return;
+            foreach (var sub in Directory.EnumerateDirectories(dir))
+            {
+                // Carpetas ocultas o del sistema (p. ej. $RECYCLE.BIN) no se revisan.
+                if ((File.GetAttributes(sub) & (FileAttributes.Hidden | FileAttributes.System)) != 0) continue;
+                ScanDirectory(found, sub, src, depth - 1, hidden);
+            }
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            Log.Warn($"No se pudo leer {dir}: {ex.Message}");
+        }
+    }
+
+    private static void Add(Dictionary<string, WallpaperProject> found, WallpaperProject? p, HashSet<string> hidden)
+    {
+        if (p == null || p.Type == WallpaperType.Unknown || hidden.Contains(p.Location)) return;
+        found[p.Id] = p;
     }
 
     public static string? ResolveWallpaperEngineInstall(AppSettings s)
@@ -80,16 +117,22 @@ public sealed class Library
         return false;
     }
 
-    /// <summary>Copia un video a la biblioteca propia creando un project.json compatible.</summary>
-    public static string ImportVideo(string videoPath)
+    /// <summary>Copia videos, imágenes o GIF a la biblioteca propia (carpeta "Importados"). Devuelve las rutas nuevas.</summary>
+    public static List<string> ImportMedia(IEnumerable<string> files)
     {
-        var name = Path.GetFileNameWithoutExtension(videoPath);
-        var folder = UniqueFolder(Path.Combine(AppPaths.DefaultLibrary, Sanitize(name)));
-        Directory.CreateDirectory(folder);
-        var fileName = Path.GetFileName(videoPath);
-        File.Copy(videoPath, Path.Combine(folder, fileName));
-        WriteProject(folder, "video", fileName, name);
-        return folder;
+        var target = Path.Combine(AppPaths.DefaultLibrary, "Importados");
+        Directory.CreateDirectory(target);
+        var result = new List<string>();
+        foreach (var f in files.Where(WallpaperProject.IsStandaloneMedia))
+        {
+            var name = Sanitize(Path.GetFileNameWithoutExtension(f));
+            var ext = Path.GetExtension(f);
+            var dest = Path.Combine(target, name + ext);
+            for (int i = 2; File.Exists(dest); i++) dest = Path.Combine(target, $"{name} ({i}){ext}");
+            File.Copy(f, dest);
+            result.Add(dest);
+        }
+        return result;
     }
 
     /// <summary>Copia una carpeta web (con index.html) a la biblioteca propia.</summary>

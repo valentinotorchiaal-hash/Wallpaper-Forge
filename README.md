@@ -3,7 +3,7 @@
 Fondos de pantalla animados para Windows 11: **video**, **web (HTML/JS)** y **escenas**,
 compatible con los wallpapers que ya tenés descargados de Wallpaper Engine.
 
-> Estado: **v0.2.** La v0.1 se ejecutó sin errores en Windows 11. En cada cambio, GitHub Actions compila,
+> Estado: **v0.3.** La v0.1 se ejecutó sin errores en Windows 11. En cada cambio, GitHub Actions compila,
 > corre los tests y ejecuta un autodiagnóstico en una máquina Windows (`--selftest`).
 
 ## Instalar (recomendado)
@@ -24,6 +24,11 @@ Para actualizar después de un `git pull`, se corre el mismo script.
 |---|---|
 | Wallpapers de video (mp4, webm, mov…) con volumen, velocidad y escalado | ✅ |
 | Wallpapers web (HTML/CSS/JS) | ✅ |
+| Imágenes y GIF como wallpaper | ✅ |
+| Videos, imágenes y GIF sueltos en cualquier subcarpeta (cada archivo es un wallpaper; la carpeta queda como etiqueta) | ✅ |
+| Arrastrar y soltar o pegar (Ctrl+V) archivos en la ventana | ✅ |
+| Miniaturas estáticas en la biblioteca (GIF y videos se mueven sólo al pasar el mouse) y vista previa del video antes de aplicarlo | ✅ |
+| Quitar wallpapers de la biblioteca sin borrarlos del disco | ✅ |
 | API web de Wallpaper Engine (`wallpaperPropertyListener`, `applyUserProperties`, `applyGeneralProperties`, `setPaused`, carpetas, archivo aleatorio) | ✅ |
 | Abrir wallpapers de Wallpaper Engine (Steam Workshop y `projects/myprojects`) | ✅ video y web; escenas parcial |
 | Escenas `.pkg`: capas de imagen, jerarquía, rotación/escala, opacidad, mezcla aditiva, texturas animadas, sonidos, visibilidad ligada a propiedades | ✅ (mejor esfuerzo) |
@@ -82,7 +87,7 @@ dotnet publish src/WallpaperForge -c Release -o publish
 dotnet test tests/WallpaperForge.Tests
 ```
 
-Tests del runtime web en Chromium (requiere Node y Playwright):
+Tests del runtime web y de la interfaz en Chromium (requiere Node, Playwright y ffmpeg):
 
 ```bash
 WF_EXPORT_SCENE=scene-out dotnet test tests/WallpaperForge.Tests
@@ -91,6 +96,12 @@ WF_EXPORT_SCENE=scene-out dotnet test tests/WallpaperForge.Tests
 ```bash
 node tests/runtime/runtime-test.js scene-out
 ```
+
+```bash
+node tests/runtime/ui-test.js media
+```
+
+La interfaz también se puede ver en un navegador con datos de ejemplo: `src/WallpaperForge/wwwroot/ui/index.html?demo=1`.
 
 ## Arquitectura
 
@@ -145,6 +156,17 @@ Si más adelante hace falta (formatos raros, menor consumo de RAM), se puede agr
 | Logs (7 días) | `%LOCALAPPDATA%\WallpaperForge\logs` |
 | Caché de escenas convertidas | `%LOCALAPPDATA%\WallpaperForge\scene-cache` |
 | Biblioteca propia | `Documentos\Wallpaper Forge\wallpapers` |
+
+## Cómo se organiza la biblioteca
+
+Se escanea `Documentos\Wallpaper Forge\wallpapers`, las carpetas que agregues, y Steam Workshop.
+En tus carpetas se busca hasta 4 niveles de subcarpetas:
+
+- Una carpeta con `project.json` o `index.html` es **un** wallpaper.
+- Cualquier otro video, imagen o GIF suelto es **un wallpaper por archivo** (el nombre de su carpeta queda como etiqueta, p. ej. "verdes").
+
+Los wallpapers de ejemplo que trae Wallpaper Engine (`projects\defaultprojects`) no se muestran por defecto
+(Configuración → Biblioteca para activarlos).
 
 ## Qué revisar en la primera prueba en Windows
 
