@@ -53,6 +53,44 @@ jobs:
           } else { Write-Host "::error title=selftest::Sin resultado (exit $($p.ExitCode))" }
           Get-ChildItem "$env:LOCALAPPDATA\WallpaperForge\logs" -ErrorAction SilentlyContinue | Get-Content
           exit $p.ExitCode
+      - name: Instalador (script de instalación de punta a punta)
+        shell: pwsh
+        run: |
+          # Una "versión vieja" abierta desde otra carpeta: el instalador y la app tienen que dejar sólo una.
+          $old = Join-Path $env:USERPROFILE 'Downloads\wf-vieja'
+          New-Item -ItemType Directory -Force $old | Out-Null
+          Copy-Item publish\* $old -Recurse -Force
+          Set-Content (Join-Path $old 'mio.txt') 'archivo del usuario: no se tiene que borrar'
+          Start-Process (Join-Path $old 'WallpaperForge.exe'); Start-Sleep 5
+          powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -Yes
+          Start-Sleep 8
+          $procs = Get-Process WallpaperForge -ErrorAction SilentlyContinue | ForEach-Object { $_.Path }
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\WallpaperForge\WallpaperForge.exe'
+          $run = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run').WallpaperForge
+          $checks = @(
+            @('instalado', (Test-Path $exe)),
+            @('una sola instancia abierta', (@($procs).Count -eq 1)),
+            @('la instancia abierta es la instalada', (@($procs)[0] -eq $exe)),
+            @('copia vieja borrada', -not (Test-Path (Join-Path $old 'WallpaperForge.exe'))),
+            @('archivo del usuario intacto', (Test-Path (Join-Path $old 'mio.txt'))),
+            @('arranque con Windows apunta a la instalada', ($run -like "*$exe*"))
+          )
+          $fail = 0
+          foreach ($c in $checks) {
+            if ($c[1]) { Write-Host "::notice title=instalador OK::$($c[0])" } else { Write-Host "::error title=instalador FAIL::$($c[0]) (procesos: $($procs -join ', '); run: $run)"; $fail++ }
+          }
+          # La app sola (sin el script): abrir la instalada con otra copia corriendo debe cerrar la otra.
+          Get-Process WallpaperForge -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 2
+          $old2 = Join-Path $env:TEMP 'wf-otra'
+          New-Item -ItemType Directory -Force $old2 | Out-Null
+          Copy-Item publish\* $old2 -Recurse -Force
+          Start-Process (Join-Path $old2 'WallpaperForge.exe'); Start-Sleep 6
+          Start-Process $exe; Start-Sleep 8
+          $procs = @(Get-Process WallpaperForge -ErrorAction SilentlyContinue | ForEach-Object { $_.Path })
+          if ($procs.Count -eq 1 -and $procs[0] -eq $exe) { Write-Host "::notice title=instalador OK::la versión abierta última reemplaza a otra copia" }
+          else { Write-Host "::error title=instalador FAIL::la otra copia sigue abierta ($($procs -join ', '))"; $fail++ }
+          Get-Process WallpaperForge -ErrorAction SilentlyContinue | Stop-Process -Force
+          exit $fail
       - uses: actions/upload-artifact@v4
         if: always()
         with:

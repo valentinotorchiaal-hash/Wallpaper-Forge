@@ -63,16 +63,17 @@
     ];
     lib = lib.concat(window.__WF_DEMO_EXTRA || []);
     var state = {
-      version: '0.1.0',
+      version: '0.4.0', exePath: 'C:\\Users\\vos\\AppData\\Local\\Programs\\WallpaperForge\\WallpaperForge.exe',
       paused: false,
       monitors: [
         { id: '\\\\.\\DISPLAY1', index: 1, primary: true, x: 0, y: 0, width: 2560, height: 1440, scale: 1.25, wallpaperId: 'a1', wallpaperTitle: 'Ciudad de neón', covered: false },
         { id: '\\\\.\\DISPLAY2', index: 2, primary: false, x: 2560, y: 180, width: 1920, height: 1080, scale: 1, wallpaperId: 'a3', wallpaperTitle: 'Bosque al atardecer', covered: true },
       ],
       settings: {
-        pauseMode: 'Fullscreen', muted: false, pauseOnBattery: true, closeOtherWallpaperApps: false, includeWallpaperEngineSamples: false, hiddenCount: 0, startWithWindows: true, startMinimized: true, scanSteamWorkshop: true, fpsLimit: 60,
+        pauseMode: 'Fullscreen', muted: false, pauseOnBattery: true, closeOtherWallpaperApps: false, includeWallpaperEngineSamples: false, hiddenCount: 0,
+        scan: { total: 9, ignored: { '.heic': 2 }, roots: [{ path: 'C:\\Users\\vos\\Documents\\Wallpaper Forge\\wallpapers', source: 'Local', count: 3, exists: true }, { path: 'D:\\Wallpapers', source: 'Local', count: 4, exists: true }, { path: 'E:\\Viejo', source: 'Local', count: 0, exists: false }, { path: 'C:\\Steam\\steamapps\\workshop\\content\\431960', source: 'SteamWorkshop', count: 2, exists: true }] }, startWithWindows: true, startMinimized: true, scanSteamWorkshop: true, fpsLimit: 60,
         wallpaperEngineInstallPath: '', detectedWallpaperEngine: 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\wallpaper_engine',
-        libraryFolders: ['D:\\Wallpapers'], defaultLibrary: 'C:\\Users\\vos\\Documents\\Wallpaper Forge\\wallpapers',
+        libraryFolders: ['D:\\Wallpapers', 'E:\\Viejo'], defaultLibrary: 'C:\\Users\\vos\\Documents\\Wallpaper Forge\\wallpapers',
         pauseIgnoreProcesses: ['NVIDIA Share', 'nvcontainer', 'GameBar'],
       },
     };

@@ -298,7 +298,8 @@ public sealed class Bridge
         var s = _m.Settings;
         return new
         {
-            version = typeof(Bridge).Assembly.GetName().Version?.ToString(3),
+            version = AppVersion.Text,
+            exePath = Environment.ProcessPath,
             monitors = _m.CurrentMonitors.Select(mon => new
             {
                 id = mon.Id,
@@ -323,6 +324,12 @@ public sealed class Bridge
                 scanSteamWorkshop = s.ScanSteamWorkshop,
                 includeWallpaperEngineSamples = s.IncludeWallpaperEngineSamples,
                 hiddenCount = s.HiddenWallpapers.Count,
+                scan = new
+                {
+                    roots = _m.Library.LastScan.Roots.Select(r => new { path = r.Path, source = r.Source, count = r.Count, exists = r.Exists }).ToList(),
+                    ignored = _m.Library.LastScan.IgnoredExtensions,
+                    total = _m.Library.Items.Count,
+                },
                 fpsLimit = s.FpsLimit,
                 wallpaperEngineInstallPath = s.WallpaperEngineInstallPath,
                 detectedWallpaperEngine = SteamLocator.WallpaperEngineInstall(),
@@ -414,7 +421,7 @@ public sealed class Bridge
         {
             Title = "Elegí videos, imágenes o GIF",
             Multiselect = true,
-            Filter = "Videos, imágenes y GIF|*.mp4;*.webm;*.m4v;*.mov;*.mkv;*.avi;*.wmv;*.jpg;*.jpeg;*.png;*.gif;*.webp;*.bmp;*.avif|Todos los archivos|*.*",
+            Filter = "Videos, imágenes y GIF|*.mp4;*.webm;*.m4v;*.mov;*.mkv;*.avi;*.wmv;*.ogv;*.jpg;*.jpeg;*.jfif;*.jpe;*.png;*.apng;*.gif;*.webp;*.bmp;*.avif|Todos los archivos|*.*",
         };
         return dlg.ShowDialog(_window) == DialogResult.OK ? dlg.FileNames : Array.Empty<string>();
     }

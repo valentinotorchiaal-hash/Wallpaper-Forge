@@ -79,6 +79,8 @@
   var lastActiveKey = null;
 
   function renderTopButtons() {
+    var v = $('#appVersion');
+    if (v) { v.textContent = 'v' + (state.version || '?'); v.title = state.exePath || ''; }
     var pb = $('#btnPause');
     pb.innerHTML = state.paused ? ICONS.play : ICONS.pause;
     pb.title = state.paused ? 'Reanudar' : 'Pausar todo';
@@ -559,7 +561,14 @@
   // ---------------- Importar ----------------
   function doImport(kind) {
     var map = { media: 'importMedia', video: 'importMedia', web: 'importWeb', folder: 'addLibraryFolder', paste: 'pasteFiles' };
-    if (kind === 'rescan') return refreshLibrary(true).then(function () { toast('Biblioteca actualizada'); });
+    if (kind === 'rescan') return refreshLibrary(true).then(function () {
+      return call('getState').then(function (st) {
+        lastActiveKey = null; setState(st);
+        var sc = st.settings.scan || { total: library.length, ignored: {} };
+        var ign = Object.keys(sc.ignored || {}).map(function (k) { return sc.ignored[k] + ' ' + k; });
+        toast('Biblioteca actualizada: ' + sc.total + ' wallpapers' + (ign.length ? ' · No compatibles: ' + ign.join(', ') : ''), ign.length ? 'warn' : '');
+      });
+    });
     return call(map[kind]).then(function (res) {
       if (res == null) return;
       if (kind === 'folder') setState(res);
@@ -604,12 +613,22 @@
     var weInput = el('input', { type: 'text', value: s.wallpaperEngineInstallPath || '', placeholder: s.detectedWallpaperEngine || 'No detectado' });
     weInput.addEventListener('change', function () { save({ wallpaperEngineInstallPath: weInput.value.trim() }); });
 
-    var folders = el('ul', { class: 'folders' }, [el('li', {}, [el('span', { text: s.defaultLibrary }), el('span', { class: 'muted', text: 'biblioteca propia' })])]
-      .concat(s.libraryFolders.map(function (f) {
-        return el('li', {}, [el('span', { text: f }), el('button', { class: 'link', text: 'Quitar', onclick: function () {
-          call('removeLibraryFolder', { folder: f }).then(function (st) { setState(st); refreshLibrary(false); openSettings(); });
-        } })]);
-      })));
+    var scan = s.scan || { roots: [], ignored: {} };
+    var SRC = { Local: 'tus carpetas', SteamWorkshop: 'Steam Workshop', WallpaperEngineProjects: 'Wallpaper Engine' };
+    var folders = el('ul', { class: 'folders' }, scan.roots.map(function (r) {
+      var removable = s.libraryFolders.some(function (f) { return f.toLowerCase() === r.path.toLowerCase(); });
+      return el('li', { class: r.exists ? '' : 'missing' }, [
+        el('span', { text: r.path, title: r.path }),
+        el('span', { class: 'muted', text: r.exists ? (r.count + ' wallpapers · ' + (SRC[r.source] || r.source)) : 'la carpeta no existe' }),
+        removable ? el('button', { class: 'link', text: 'Quitar', onclick: function () {
+          call('removeLibraryFolder', { folder: r.path }).then(function (st) { setState(st); refreshLibrary(false); openSettings(); });
+        } }) : null,
+      ]);
+    }));
+    var ignoredKeys = Object.keys(scan.ignored || {});
+    var ignoredNote = ignoredKeys.length ? el('p', { class: 'note warn', text: 'Archivos encontrados que todavía no se pueden usar: ' +
+      ignoredKeys.map(function (k) { return scan.ignored[k] + ' ' + k; }).join(', ') +
+      '. Convertilos a JPG, PNG, GIF, MP4 o WebM.' }) : null;
 
     [
       el('h3', { text: 'Rendimiento' }),
@@ -621,8 +640,13 @@
       el('div', { class: 'field inline' }, [el('label', { text: 'Iniciar con Windows' }), toggle(s.startWithWindows, function (v) { save({ startWithWindows: v }); })]),
       el('div', { class: 'field inline' }, [el('label', { text: 'Iniciar minimizado en la bandeja' }), toggle(s.startMinimized, function (v) { save({ startMinimized: v }); })]),
       el('h3', { text: 'Biblioteca' }),
+      el('p', { class: 'muted small', text: 'Se revisan estas carpetas y sus subcarpetas. Cada video, imagen o GIF suelto es un wallpaper.' }),
       folders,
-      el('button', { class: 'btn ghost', text: 'Agregar carpeta…', onclick: function () { doImport('folder').then(openSettings); } }),
+      ignoredNote,
+      el('div', { class: 'row-actions' }, [
+        el('button', { class: 'btn ghost', text: 'Agregar carpeta…', onclick: function () { doImport('folder').then(openSettings); } }),
+        el('button', { class: 'btn ghost', text: 'Volver a escanear', onclick: function () { doImport('rescan').then(openSettings); } }),
+      ]),
       el('div', { class: 'field inline' }, [el('label', { text: 'Incluir wallpapers de Steam Workshop (Wallpaper Engine)' }),
         toggle(s.scanSteamWorkshop, function (v) { save({ scanSteamWorkshop: v }).then(function () { refreshLibrary(false); }); })]),
       el('div', { class: 'field inline' }, [el('label', { text: 'Mostrar los wallpapers de ejemplo de Wallpaper Engine' }),
@@ -637,8 +661,9 @@
       el('div', { class: 'row-actions' }, [
         el('button', { class: 'btn ghost', text: 'Abrir carpeta de logs', onclick: function () { call('openLogs'); } }),
       ]),
-      el('p', { class: 'muted small', text: 'Wallpaper Forge ' + (state.version || '') + ' · proyecto independiente, no afiliado a Wallpaper Engine ni a Valve.' }),
-    ].forEach(function (n) { body.appendChild(n); });
+      el('p', { class: 'muted small', text: 'Wallpaper Forge ' + (state.version || '') + ' · ejecutándose desde ' + (state.exePath || '?') }),
+      el('p', { class: 'muted small', text: 'Proyecto independiente, no afiliado a Wallpaper Engine ni a Valve.' }),
+    ].forEach(function (n) { if (n) body.appendChild(n); });
 
     $('#settingsModal').hidden = false;
   }

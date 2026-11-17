@@ -16,7 +16,7 @@ public sealed class MainWindow : Form
 
     public MainWindow(WallpaperManager manager, OtherAppsService otherApps)
     {
-        Text = "Wallpaper Forge";
+        Text = "Wallpaper Forge " + AppVersion.Text;
         Width = 1280;
         Height = 820;
         MinimumSize = new Size(900, 600);
@@ -136,8 +136,8 @@ public sealed class MainWindow : Form
 
     private static string MimeOf(string path) => Path.GetExtension(path).ToLowerInvariant() switch
     {
-        ".jpg" or ".jpeg" => "image/jpeg",
-        ".png" => "image/png",
+        ".jpg" or ".jpeg" or ".jfif" or ".jpe" or ".pjpeg" or ".pjp" => "image/jpeg",
+        ".png" or ".apng" => "image/png",
         ".gif" => "image/gif",
         ".webp" => "image/webp",
         ".bmp" => "image/bmp",

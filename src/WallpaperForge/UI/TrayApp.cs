@@ -35,7 +35,7 @@ public sealed class TrayApp : ApplicationContext
         _tray = new NotifyIcon
         {
             Icon = AppIcon.Get(),
-            Text = "Wallpaper Forge",
+            Text = "Wallpaper Forge " + AppVersion.Text,
             ContextMenuStrip = menu,
             Visible = true,
         };

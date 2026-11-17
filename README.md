@@ -3,7 +3,7 @@
 Fondos de pantalla animados para Windows 11: **video**, **web (HTML/JS)** y **escenas**,
 compatible con los wallpapers que ya tenés descargados de Wallpaper Engine.
 
-> Estado: **v0.3.** La v0.1 se ejecutó sin errores en Windows 11. En cada cambio, GitHub Actions compila,
+> Estado: **v0.4.** La v0.1 se ejecutó sin errores en Windows 11. En cada cambio, GitHub Actions compila,
 > corre los tests y ejecuta un autodiagnóstico en una máquina Windows (`--selftest`).
 
 ## Instalar (recomendado)
@@ -14,8 +14,10 @@ Desde la carpeta del repo, en PowerShell:
 powershell -ExecutionPolicy Bypass -File scripts\install.ps1
 ```
 
-Compila, copia la app a `%LOCALAPPDATA%\Programs\WallpaperForge`, crea el acceso directo en el menú Inicio
-y la abre. A partir de ahí **arranca sola con Windows** (se puede desactivar en Configuración → Inicio).
+Compila, cierra cualquier copia abierta, instala en `%LOCALAPPDATA%\Programs\WallpaperForge`, busca otras copias
+del programa (p. ej. `bin\Debug` o la carpeta de un zip) y ofrece borrarlas (sólo sus archivos), corrige accesos
+directos y la abre. Queda **una sola versión**: además, si se abre una copia desde otra carpeta, la última que se abre
+cierra a la anterior. La versión se ve al lado del nombre, arriba a la izquierda. A partir de ahí **arranca sola con Windows** (se puede desactivar en Configuración → Inicio).
 Para actualizar después de un `git pull`, se corre el mismo script.
 
 ## Qué hace la v0.1

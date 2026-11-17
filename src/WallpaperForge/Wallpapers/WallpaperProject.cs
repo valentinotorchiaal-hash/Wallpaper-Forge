@@ -74,10 +74,11 @@ public sealed class WallpaperProject
         _ => WallpaperType.Unknown,
     };
 
-    private static readonly string[] VideoExt = { ".mp4", ".webm", ".m4v", ".mov", ".mkv", ".avi", ".wmv" };
+    private static readonly string[] VideoExt = { ".mp4", ".webm", ".m4v", ".mov", ".mkv", ".avi", ".wmv", ".ogv" };
     public static bool IsVideoFile(string path) => VideoExt.Contains(Path.GetExtension(path).ToLowerInvariant());
 
-    private static readonly string[] ImageExt = { ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif" };
+    // .jfif/.jpe/.pjpeg son JPEG con otra extensión (Pinterest y Chrome suelen guardar así).
+    private static readonly string[] ImageExt = { ".jpg", ".jpeg", ".jfif", ".jpe", ".pjpeg", ".pjp", ".png", ".apng", ".gif", ".webp", ".bmp", ".avif" };
     public static bool IsImageFile(string path) => ImageExt.Contains(Path.GetExtension(path).ToLowerInvariant());
 
     private static readonly HashSet<string> PreviewNames = new(StringComparer.OrdinalIgnoreCase)

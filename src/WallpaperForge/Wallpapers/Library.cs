@@ -15,6 +15,20 @@ public sealed class Library
     /// <summary>Raíces escaneadas en el último escaneo (para validar accesos a archivos desde la UI).</summary>
     public IReadOnlyList<string> Roots { get; private set; } = Array.Empty<string>();
 
+    /// <summary>Resultado del último escaneo: qué carpetas se revisaron y qué archivos no se pudieron usar.</summary>
+    public sealed class ScanReport
+    {
+        public List<(string Path, string Source, int Count, bool Exists)> Roots { get; } = new();
+        public Dictionary<string, int> IgnoredExtensions { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public int Hidden { get; set; }
+    }
+
+    public ScanReport LastScan { get; private set; } = new();
+
+    // Formatos de imagen/video comunes que todavía no se pueden usar (se informan en la interfaz).
+    private static readonly HashSet<string> KnownUnsupported = new(StringComparer.OrdinalIgnoreCase)
+        { ".heic", ".heif", ".tif", ".tiff", ".svg", ".ico", ".raw", ".cr2", ".nef", ".psd", ".jxl", ".3gp", ".flv", ".mpg", ".mpeg", ".ts", ".m2ts", ".vob" };
+
     public WallpaperProject? Get(string id) { lock (_gate) return _items.GetValueOrDefault(id); }
 
     public WallpaperProject? FindByLocation(string location) => Get(WallpaperProject.MakeId(location));
@@ -39,18 +53,27 @@ public sealed class Library
 
         var hidden = new HashSet<string>(settings.HiddenWallpapers, StringComparer.OrdinalIgnoreCase);
         var found = new Dictionary<string, WallpaperProject>();
+        var report = new ScanReport { Hidden = hidden.Count };
+        // Las carpetas agregadas que ya no existen también se informan.
+        foreach (var missing in settings.LibraryFolders.Where(f => !Directory.Exists(f)))
+            report.Roots.Add((missing, "Local", 0, false));
         foreach (var (root, src) in roots)
         {
             // Steam Workshop: una carpeta por wallpaper. Carpetas propias: se busca en subcarpetas (hasta 4 niveles).
             int depth = src == WallpaperSource.Local ? 4 : 1;
-            ScanDirectory(found, root, src, depth, hidden);
+            int before = found.Count;
+            ScanDirectory(found, root, src, depth, hidden, report.IgnoredExtensions);
+            report.Roots.Add((root, src.ToString(), found.Count - before, true));
         }
 
         lock (_gate)
         {
             _items = found;
             Roots = roots.Select(r => Path.GetFullPath(r.path)).ToList();
+            LastScan = report;
         }
+        if (report.IgnoredExtensions.Count > 0)
+            Log.Info("Archivos no compatibles: " + string.Join(", ", report.IgnoredExtensions.Select(kv => $"{kv.Key} x{kv.Value}")));
         Log.Info($"Biblioteca: {found.Count} wallpapers en {roots.Count} carpetas ({hidden.Count} ocultos)");
     }
 
@@ -61,7 +84,7 @@ public sealed class Library
     /// Si no, cada video, imagen o GIF suelto es un wallpaper, y se revisan las subcarpetas.
     /// </summary>
     internal static void ScanDirectory(Dictionary<string, WallpaperProject> found, string dir, WallpaperSource src,
-        int depth, HashSet<string> hidden)
+        int depth, HashSet<string> hidden, Dictionary<string, int>? ignored = null)
     {
         if (found.Count >= MaxItems) return;
         try
@@ -76,15 +99,22 @@ public sealed class Library
             }
 
             foreach (var file in Directory.EnumerateFiles(dir))
+            {
                 if (WallpaperProject.IsStandaloneMedia(file))
                     Add(found, WallpaperProject.Load(file, src), hidden);
+                else if (ignored != null && KnownUnsupported.Contains(Path.GetExtension(file)))
+                {
+                    var ext = Path.GetExtension(file).ToLowerInvariant();
+                    ignored[ext] = ignored.GetValueOrDefault(ext) + 1;
+                }
+            }
 
             if (depth <= 0) return;
             foreach (var sub in Directory.EnumerateDirectories(dir))
             {
                 // Carpetas ocultas o del sistema (p. ej. $RECYCLE.BIN) no se revisan.
                 if ((File.GetAttributes(sub) & (FileAttributes.Hidden | FileAttributes.System)) != 0) continue;
-                ScanDirectory(found, sub, src, depth - 1, hidden);
+                ScanDirectory(found, sub, src, depth - 1, hidden, ignored);
             }
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)

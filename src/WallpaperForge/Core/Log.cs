@@ -54,3 +54,8 @@ public static class AppPaths
     public static string RuntimeDir => Path.Combine(WwwRoot, "runtime");
     public static string UiDir => Path.Combine(WwwRoot, "ui");
 }
+
+public static class AppVersion
+{
+    public static string Text => typeof(AppVersion).Assembly.GetName().Version?.ToString(3) ?? "?";
+}

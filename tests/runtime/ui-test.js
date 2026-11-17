@@ -83,6 +83,11 @@ srv.listen(0, async () => {
   const before = await p.$$eval('.card', c => c.length);
   await p.click('.details .btn.danger'); await p.waitForTimeout(400);
   check(await p.$$eval('.card', c => c.length) === before - 1, 'quitar de la biblioteca');
+  // Configuración completa (antes se cortaba si no había wallpapers quitados)
+  await p.click('#btnSettings');
+  await p.waitForSelector('.folders li', { state: 'attached' });
+  check(await p.$$eval('.modal-body h3', h => h.map(x => x.textContent).includes('Diagnóstico')), 'Configuración se muestra completa');
+  check(/v\d+\.\d+\.\d+/.test(await p.textContent('#appVersion')), 'la versión se ve en la ventana');
   check(errs.length === 0, 'sin errores JS ' + errs.join(';'));
   await b.close(); srv.close(); process.exit(ok ? 0 : 1);
 });

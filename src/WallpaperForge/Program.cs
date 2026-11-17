@@ -26,22 +26,27 @@ internal static class Program
         }
         bool fromStartup = args.Contains("--startup", StringComparer.OrdinalIgnoreCase);
 
+        Log.Init();
+
         using var mutex = new Mutex(true, MutexName, out bool isFirst);
         if (!isFirst)
         {
-            // Ya está abierta: se le pide que muestre su ventana y se sale.
-            try
+            // Hay otra instancia abierta. Si es OTRA copia del programa (otra carpeta, otra versión),
+            // se cierra y esta toma su lugar: así nunca queda corriendo una versión vieja.
+            if (!TakeOverFromOtherCopies(mutex))
             {
-                using var client = new NamedPipeClientStream(".", PipeName, PipeDirection.Out);
-                client.Connect(1500);
-                client.WriteByte(1);
+                // Es esta misma copia: se le pide que muestre su ventana y se sale.
+                try
+                {
+                    using var client = new NamedPipeClientStream(".", PipeName, PipeDirection.Out);
+                    client.Connect(1500);
+                    client.WriteByte(1);
+                }
+                catch { }
+                return;
             }
-            catch { }
-            return;
         }
-
-        Log.Init();
-        Log.Info($"Wallpaper Forge {typeof(Program).Assembly.GetName().Version} iniciando (Windows {Environment.OSVersion.Version})");
+        Log.Info($"Wallpaper Forge {AppVersion.Text} iniciando desde {Environment.ProcessPath} (Windows {Environment.OSVersion.Version})");
 
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         Application.EnableVisualStyles();
@@ -55,6 +60,48 @@ internal static class Program
         StartActivationListener(context);
         Application.Run(context);
         Log.Info("Wallpaper Forge cerrado");
+    }
+
+    /// <summary>
+    /// Cierra las instancias de Wallpaper Forge que corren desde OTRA ubicación (p. ej. una versión vieja en bin\Debug
+    /// o en la carpeta del zip) y toma el control. Devuelve false si la otra instancia es esta misma copia.
+    /// </summary>
+    private static bool TakeOverFromOtherCopies(Mutex mutex)
+    {
+        var me = Environment.ProcessPath ?? "";
+        var others = System.Diagnostics.Process.GetProcessesByName("WallpaperForge")
+            .Where(p => p.Id != Environment.ProcessId).ToList();
+        var different = new List<System.Diagnostics.Process>();
+        foreach (var p in others)
+        {
+            string? path = null;
+            try { path = p.MainModule?.FileName; } catch { }
+            if (path == null || !string.Equals(Path.GetFullPath(path), Path.GetFullPath(me), StringComparison.OrdinalIgnoreCase))
+                different.Add(p);
+        }
+        if (different.Count == 0) return false;
+
+        foreach (var p in different)
+        {
+            try
+            {
+                Log.Info($"Cerrando otra copia de Wallpaper Forge: {SafePath(p)} (pid {p.Id})");
+                p.Kill(entireProcessTree: true);
+                p.WaitForExit(5000);
+            }
+            catch (Exception ex) { Log.Warn($"No se pudo cerrar la otra copia (pid {p.Id}): {ex.Message}"); }
+        }
+        try
+        {
+            // El mutex de la instancia cerrada queda "abandonado": al tomarlo, pasa a ser nuestro.
+            return mutex.WaitOne(TimeSpan.FromSeconds(5));
+        }
+        catch (AbandonedMutexException) { return true; }
+    }
+
+    private static string SafePath(System.Diagnostics.Process p)
+    {
+        try { return p.MainModule?.FileName ?? "?"; } catch { return "?"; }
     }
 
     /// <summary>Corre el autodiagnóstico con su propio bucle de mensajes (no usa la instancia única ni la configuración).</summary>

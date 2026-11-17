@@ -14,7 +14,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <RootNamespace>WallpaperForge</RootNamespace>
     <AssemblyName>WallpaperForge</AssemblyName>
-    <Version>0.3.0</Version>
+    <Version>0.4.0</Version>
     <Product>Wallpaper Forge</Product>
     <Description>Fondos de pantalla animados (video, web y escenas) para Windows.</Description>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
