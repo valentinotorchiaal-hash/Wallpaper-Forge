@@ -11,7 +11,8 @@ public class LibraryTests : IDisposable
 
     private string Touch(string rel, string content = "x")
     {
-        var p = Path.Combine(_root, rel.Replace('\\', Path.DirectorySeparatorChar));
+        // GetFullPath normaliza los separadores (en Windows "/" pasa a "\\"), igual que los que devuelve el escaneo.
+        var p = Path.GetFullPath(Path.Combine(_root, rel.Replace('/', Path.DirectorySeparatorChar)));
         Directory.CreateDirectory(Path.GetDirectoryName(p)!);
         File.WriteAllText(p, content);
         return p;

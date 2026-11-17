@@ -18,7 +18,22 @@ jobs:
       - name: Compilar
         run: dotnet build -c Release
       - name: Tests
-        run: dotnet test tests/WallpaperForge.Tests -c Release --no-build --logger "console;verbosity=normal"
+        shell: pwsh
+        run: |
+          dotnet test tests/WallpaperForge.Tests -c Release --no-build --logger "console;verbosity=normal" --logger "trx;LogFileName=tests.trx" --results-directory testresults
+          $code = $LASTEXITCODE
+          # Cada test fallido como anotación (se ven sin permisos en la pestaña del commit).
+          Get-ChildItem testresults -Filter *.trx -Recurse | ForEach-Object {
+            [xml]$x = Get-Content $_.FullName
+            foreach ($r in $x.TestRun.Results.UnitTestResult) {
+              if ($r.outcome -ne 'Passed') {
+                $m = ($r.Output.ErrorInfo.Message -replace "`r?`n", ' ')
+                if ($m.Length -gt 400) { $m = $m.Substring(0, 400) }
+                Write-Host "::error title=test $($r.testName)::$m"
+              }
+            }
+          }
+          exit $code
       - name: Publicar
         run: dotnet publish src/WallpaperForge -c Release -o publish
       - name: Autodiagnóstico en Windows (escritorio, WebView2, pausa, pantalla completa)
@@ -65,10 +80,10 @@ jobs:
       - name: Instalar Playwright
         run: npm i --no-save playwright@1.48.2 && npx playwright install --with-deps chromium
       - name: Tests del runtime
-        run: node tests/runtime/runtime-test.js scene-out
+        run: node tests/runtime/runtime-test.js scene-out | sed -E 's/^FAIL (.*)$/::error title=runtime::\1/'; test ${PIPESTATUS[0]} -eq 0
       - name: Tests de la interfaz
         run: |
           mkdir -p media
           ffmpeg -loglevel error -y -f lavfi -i testsrc=size=160x90:rate=10 -t 1 media/anim.gif
           ffmpeg -loglevel error -y -f lavfi -i testsrc=size=320x180:rate=30 -t 3 -c:v libvpx-vp9 -b:v 200k media/clip.webm
-          node tests/runtime/ui-test.js media
+          node tests/runtime/ui-test.js media 2>&1 | sed -E 's/^FAIL (.*)$/::error title=interfaz::\1/; s/^(Error|TypeError|.*Timeout.*)(.*)$/::error title=interfaz::\1\2/'; test ${PIPESTATUS[0]} -eq 0
