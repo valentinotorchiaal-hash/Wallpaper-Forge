@@ -168,6 +168,8 @@ select:focus, input:focus, textarea:focus { border-color: var(--accent); }
 .details-head .close { background: rgba(0,0,0,.6); border-color: transparent; }
 .big-preview { aspect-ratio: 16 / 9; background: #0b0b0f; }
 .big-preview img, .big-preview video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.big-preview .big-video { position: relative; width: 100%; height: 100%; }
+.big-preview .big-video .live { position: absolute; inset: 0; }
 .info { padding: 16px 18px 4px; }
 .info h2 { margin: 0 0 8px; font-size: 18px; }
 .tags { display: flex; flex-wrap: wrap; gap: 6px; }

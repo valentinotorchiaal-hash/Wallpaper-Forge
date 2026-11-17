@@ -117,5 +117,8 @@ Set-ItemProperty -Path $approved -Name 'WallpaperForge' -Value ([byte[]](2,0,0,0
 Write-Host "    arranca con Windows desde $exe"
 
 Write-Host "6/6 Abriendo Wallpaper Forge $version..." -ForegroundColor Green
-Start-Process $exe
+# Se abre a través del Explorador: si este script corre desde una app empaquetada (p. ej. una terminal
+# de la Microsoft Store o Claude Code), Windows le redirige AppData a una copia privada y la app usaría
+# otros ajustes que los de siempre.
+Start-Process explorer.exe -ArgumentList "`"$exe`""
 Write-Host "Listo. La versión aparece al lado del nombre, arriba a la izquierda de la ventana." -ForegroundColor Green

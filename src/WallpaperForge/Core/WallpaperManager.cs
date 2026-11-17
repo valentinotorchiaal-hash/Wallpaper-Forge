@@ -221,6 +221,7 @@ public sealed class WallpaperManager : IDisposable
     public async Task SetPausedByUserAsync(bool paused)
     {
         _pausedByUser = paused;
+        Log.Info(paused ? "Pausa manual" : "Reanudado a mano");
         await UpdatePauseStatesAsync();
         StateChanged?.Invoke();
     }
@@ -270,7 +271,9 @@ public sealed class WallpaperManager : IDisposable
     private async Task HealthCheckAsync()
     {
         if (_recovering || _windows.Count == 0) return;
-        bool healthy = _desktop.IsReady && _windows.Values.All(w => w.IsAlive && w.IsAttachedTo(_desktop));
+        foreach (var (id, w) in _windows.ToList())
+            if (w.IsAlive && !ShouldPause(id) && w.RepairIfStuck()) StateChanged?.Invoke();
+        bool healthy =_desktop.IsReady && _windows.Values.All(w => w.IsAlive && w.IsAttachedTo(_desktop));
         if (healthy) return;
 
         if (_windows.Values.Any(w => !w.IsAlive))
@@ -395,6 +398,7 @@ public sealed class WallpaperManager : IDisposable
         else if (e.Reason is SessionSwitchReason.SessionUnlock or SessionSwitchReason.ConsoleConnect or SessionSwitchReason.RemoteConnect)
             _sessionLocked = false;
         else return;
+        Log.Info(_sessionLocked ? "Sesión bloqueada: wallpapers en pausa" : "Sesión desbloqueada: wallpapers reanudados");
         await UpdatePauseStatesAsync();
     }
 

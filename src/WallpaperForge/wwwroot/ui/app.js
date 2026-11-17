@@ -146,7 +146,58 @@
   // ---------------- Miniaturas ----------------
   // En la grilla todo es estático (un cuadro del GIF o del video): sólo se mueve al pasar el mouse.
   // Así cientos de GIF y videos no consumen CPU ni memoria. Los cuadros se guardan en memoria.
+  // Además se guardan en localStorage: al volver a abrir la app no se decodifican de nuevo todos los videos.
   var thumbCache = new Map();
+  var THUMB_PREFIX = 'wf-thumb:';
+  function thumbKey(w) { return THUMB_PREFIX + w.id + ':' + (w.modified || '') + ':' + (w.size || 0); }
+  function getThumb(w) {
+    var v = thumbCache.get(w.id);
+    if (v) return v;
+    try { v = localStorage.getItem(thumbKey(w)); } catch (e) { v = null; }
+    if (v) thumbCache.set(w.id, v);
+    return v;
+  }
+  function saveThumb(w, dataUrl) {
+    thumbCache.set(w.id, dataUrl);
+    try {
+      // Se borra la miniatura vieja del mismo wallpaper (si cambió el archivo).
+      var old = THUMB_PREFIX + w.id + ':';
+      for (var i = localStorage.length - 1; i >= 0; i--) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf(old) === 0) localStorage.removeItem(k);
+      }
+      localStorage.setItem(thumbKey(w), dataUrl);
+    } catch (e) {
+      // Sin lugar: se descartan todas las guardadas (se vuelven a generar de a poco).
+      try {
+        for (var j = localStorage.length - 1; j >= 0; j--) {
+          var key = localStorage.key(j);
+          if (key && key.indexOf(THUMB_PREFIX) === 0) localStorage.removeItem(key);
+        }
+        localStorage.setItem(thumbKey(w), dataUrl);
+      } catch (e2) { }
+    }
+  }
+
+  // Como mucho 2 cuadros a la vez: decodificar 20 videos juntos traba la app al abrirla.
+  var captureQueue = [];
+  var capturing = 0;
+  function queueCapture(src, isVideo) {
+    return new Promise(function (resolve) {
+      captureQueue.push({ src: src, isVideo: isVideo, resolve: resolve });
+      pumpCaptures();
+    });
+  }
+  function pumpCaptures() {
+    while (capturing < 2 && captureQueue.length) {
+      var job = captureQueue.shift();
+      capturing++;
+      capture(job.src, job.isVideo).catch(function () { return null; }).then((function (j) {
+        return function (r) { capturing--; j.resolve(r); pumpCaptures(); };
+      })(job));
+    }
+  }
+
   var thumbObserver = 'IntersectionObserver' in window ? new IntersectionObserver(function (entries) {
     entries.forEach(function (en) {
       if (en.isIntersecting) { thumbObserver.unobserve(en.target); loadThumb(en.target); }
@@ -156,7 +207,7 @@
   function thumbFor(w) {
     var box = el('div', { class: 'thumb-media' });
     box._w = w;
-    var cached = thumbCache.get(w.id);
+    var cached = getThumb(w);
     if (cached) box.appendChild(el('img', { src: cached, alt: '' }));
     else if (!w.preview && !w.video) box.appendChild(el('div', { class: 'noimg', text: TYPE_LABEL[w.type] }));
     else if (thumbObserver) thumbObserver.observe(box);
@@ -178,8 +229,8 @@
       box.appendChild(el('img', { src: src, alt: '', loading: 'lazy' }));
       return;
     }
-    capture(src, isVideo).then(function (dataUrl) {
-      if (dataUrl) { thumbCache.set(w.id, dataUrl); box.innerHTML = ''; box.appendChild(el('img', { src: dataUrl, alt: '' })); }
+    queueCapture(src, isVideo).then(function (dataUrl) {
+      if (dataUrl) { saveThumb(w, dataUrl); box.innerHTML = ''; box.appendChild(el('img', { src: dataUrl, alt: '' })); }
       else { box.innerHTML = ''; box.appendChild(el('div', { class: 'noimg', text: TYPE_LABEL[w.type] })); }
     });
   }
@@ -280,6 +331,7 @@
     items.forEach(function (w) {
       var card = el('article', {
         class: 'card' + (selected && selected.id === w.id ? ' selected' : '') + (w.supported ? '' : ' unsupported'),
+        'data-id': w.id,
         tabindex: '0',
         onclick: function () { select(w.id); },
         ondblclick: function () { if (w.supported) apply(w.id); },
@@ -305,10 +357,16 @@
   function select(id) {
     call('getWallpaper', { id: id }).then(function (d) {
       selected = d;
-      $$('.card.selected').forEach(function (c) { c.classList.remove('selected'); });
-      renderGrid();
+      markSelected();
       renderDetails();
     });
+  }
+
+  // Sólo se mueve el borde de selección: rehacer toda la grilla en cada clic la trababa.
+  function markSelected() {
+    $$('.card.selected').forEach(function (c) { c.classList.remove('selected'); });
+    if (!selected) return;
+    $$('.card').forEach(function (c) { if (c.getAttribute('data-id') === selected.id) c.classList.add('selected'); });
   }
 
   function apply(id) {
@@ -325,6 +383,28 @@
   }
 
   // ---------------- Panel de detalles ----------------
+  // Video en el panel: se muestra un cuadro quieto y se reproduce sólo con el mouse encima
+  // (reproducir el 4K acá mientras también es el fondo de pantalla trababa la app).
+  function bigVideoPreview(d) {
+    var w = library.find(function (x) { return x.id === d.id; });
+    var still = w ? getThumb(w) : thumbCache.get(d.id);
+    var box = el('div', { class: 'big-video' }, [
+      still ? el('img', { src: still, alt: '' }) : el('video', { src: d.preview, preload: 'metadata', muted: true, playsinline: true }),
+    ]);
+    var live = null;
+    box.addEventListener('mouseenter', function () {
+      if (live) return;
+      live = el('video', { class: 'live', src: d.preview, autoplay: true, loop: true, muted: true, playsinline: true });
+      live.muted = true;
+      box.appendChild(live);
+    });
+    box.addEventListener('mouseleave', function () {
+      if (!live) return;
+      live.pause(); live.removeAttribute('src'); live.load(); live.remove(); live = null;
+    });
+    return box;
+  }
+
   function renderDetails() {
     var box = $('#details');
     var d = selected;
@@ -333,10 +413,10 @@
     box.innerHTML = '';
 
     var head = el('div', { class: 'details-head' }, [
-      el('button', { class: 'icon-btn close', title: 'Cerrar', text: '✕', onclick: function () { selected = null; renderDetails(); renderGrid(); } }),
+      el('button', { class: 'icon-btn close', title: 'Cerrar', text: '✕', onclick: function () { selected = null; renderDetails(); markSelected(); } }),
     ]);
     var preview = el('div', { class: 'big-preview' }, [
-      d.preview ? (d.previewIsVideo ? el('video', { src: d.preview, autoplay: true, loop: true, muted: true, playsinline: true }) : el('img', { src: d.preview, alt: '' }))
+      d.preview ? (d.previewIsVideo ? bigVideoPreview(d) : el('img', { src: d.preview, alt: '' }))
                 : el('div', { class: 'noimg', text: TYPE_LABEL[d.type] }),
     ]);
 

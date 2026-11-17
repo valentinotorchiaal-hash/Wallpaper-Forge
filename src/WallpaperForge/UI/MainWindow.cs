@@ -71,45 +71,61 @@ public sealed class MainWindow : Form
         }
     }
 
-    private void OnMediaRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
+    /// <summary>
+    /// Sirve previews y archivos de wallpapers a la interfaz. La lectura del disco se hace en segundo plano:
+    /// si se hace en el hilo de la ventana, cada miniatura o video (de cientos de MB) congela la app
+    /// y también el manejo de los wallpapers.
+    /// </summary>
+    private async void OnMediaRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
     {
         var env = _web.CoreWebView2.Environment;
+        CoreWebView2Deferral? deferral = null;
         try
         {
             var uri = new Uri(e.Request.Uri);
             var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
             var path = query["path"];
-            if (string.IsNullOrEmpty(path) || !File.Exists(path) || !_bridge.CanServe(path))
-            {
-                e.Response = env.CreateWebResourceResponse(null, 404, "Not Found", "");
-                return;
-            }
-            var length = new FileInfo(path).Length;
-            var mime = MimeOf(path);
             var range = e.Request.Headers.Contains("Range") ? e.Request.Headers.GetHeader("Range") : null;
-            if (TryParseRange(range, length, out long start, out long end))
-            {
-                // Pedido parcial (los <video> lo usan para leer sólo el principio o saltar): 206 con un bloque.
-                const long MaxChunk = 4 * 1024 * 1024;
-                end = Math.Min(end, start + MaxChunk - 1);
-                var buffer = new byte[end - start + 1];
-                using (var fs = File.OpenRead(path))
-                {
-                    fs.Seek(start, SeekOrigin.Begin);
-                    fs.ReadExactly(buffer);
-                }
-                e.Response = env.CreateWebResourceResponse(new MemoryStream(buffer), 206, "Partial Content",
-                    $"Content-Type: {mime}\r\nAccess-Control-Allow-Origin: *\r\nAccept-Ranges: bytes\r\nContent-Range: bytes {start}-{end}/{length}\r\nContent-Length: {buffer.Length}");
-                return;
-            }
-            e.Response = env.CreateWebResourceResponse(File.OpenRead(path), 200, "OK",
-                $"Content-Type: {mime}\r\nAccess-Control-Allow-Origin: *\r\nAccept-Ranges: bytes\r\nContent-Length: {length}\r\nCache-Control: max-age=3600");
+            deferral = e.GetDeferral();
+            var media = await Task.Run(() => ReadMedia(path, range));
+            e.Response = media == null
+                ? env.CreateWebResourceResponse(null, 404, "Not Found", "")
+                : env.CreateWebResourceResponse(media.Content, media.Status, media.Reason, media.Headers);
         }
         catch (Exception ex)
         {
             Log.Warn("Error sirviendo archivo a la UI: " + ex.Message);
-            e.Response = env.CreateWebResourceResponse(null, 500, "Error", "");
+            try { e.Response = env.CreateWebResourceResponse(null, 500, "Error", ""); } catch { }
         }
+        finally { deferral?.Complete(); }
+    }
+
+    private sealed record MediaResponse(Stream Content, int Status, string Reason, string Headers);
+
+    /// <summary>Lee el archivo pedido (o el bloque pedido). Corre fuera del hilo de la ventana.</summary>
+    private MediaResponse? ReadMedia(string? path, string? range)
+    {
+        if (string.IsNullOrEmpty(path) || !File.Exists(path) || !_bridge.CanServe(path)) return null;
+        var length = new FileInfo(path).Length;
+        var mime = MimeOf(path);
+        if (TryParseRange(range, length, out long start, out long end))
+        {
+            // Pedido parcial (los <video> lo usan para leer sólo el principio o saltar): 206 con un bloque.
+            const long MaxChunk = 2 * 1024 * 1024;
+            end = Math.Min(end, start + MaxChunk - 1);
+            var buffer = new byte[end - start + 1];
+            using (var fs = File.OpenRead(path))
+            {
+                fs.Seek(start, SeekOrigin.Begin);
+                fs.ReadExactly(buffer);
+            }
+            return new MediaResponse(new MemoryStream(buffer), 206, "Partial Content",
+                $"Content-Type: {mime}\r\nAccess-Control-Allow-Origin: *\r\nAccept-Ranges: bytes\r\nContent-Range: bytes {start}-{end}/{length}\r\nContent-Length: {buffer.Length}");
+        }
+        // Archivos chicos (imágenes, GIF): se leen enteros acá. Los grandes se pasan como archivo abierto.
+        Stream content = length <= 32L * 1024 * 1024 ? new MemoryStream(File.ReadAllBytes(path)) : File.OpenRead(path);
+        return new MediaResponse(content, 200, "OK",
+            $"Content-Type: {mime}\r\nAccess-Control-Allow-Origin: *\r\nAccept-Ranges: bytes\r\nContent-Length: {length}\r\nCache-Control: max-age=3600");
     }
 
     /// <summary>Interpreta "bytes=inicio-fin" (fin opcional). Sólo un rango.</summary>

@@ -14,7 +14,11 @@ public sealed class WallpaperWindow : Form
 {
     private CoreWebView2Controller? _controller;
     private readonly List<string> _injectedScripts = new();
-    private bool _paused;
+    // Las pausas se aplican de a una: si una pausa y una reanudación se pisan, la ventana podía quedar
+    // oculta y suspendida aunque el monitor figure "reproduciendo" (y ningún cambio de fondo la arreglaba).
+    private readonly SemaphoreSlim _pauseGate = new(1, 1);
+    private bool _paused;          // estado pedido
+    private bool _appliedPaused;   // estado aplicado de verdad al WebView2
     private bool _attached;
 
     public MonitorInfo Monitor { get; private set; }
@@ -98,6 +102,9 @@ public sealed class WallpaperWindow : Form
         // WinForms puede reaplicar su posición en coordenadas de pantalla al mostrarse: se vuelve a ubicar.
         desktop.Reposition(Handle, Monitor.Bounds);
         ResizeController();
+        // El WebView2 se crea cuando la ventana todavía no se ve y nace oculto: si no se lo muestra acá,
+        // el monitor sigue con el fondo de Windows hasta que algo lo pause y lo reanude.
+        _controller.IsVisible = true;
     }
 
     private DateTime _lastCrashReload = DateTime.MinValue;
@@ -156,6 +163,13 @@ public sealed class WallpaperWindow : Form
         Project = project;
 
         if (core.IsSuspended) core.Resume(); // no se puede navegar suspendido
+        // Si no está en pausa, se asegura que se vea (si está en pausa, NavigationCompleted la vuelve a suspender).
+        if (!_paused && _pauseGate.CurrentCount > 0 && !_controller.IsVisible)
+        {
+            Log.Warn($"Monitor {Monitor.Id}: el wallpaper estaba oculto sin estar en pausa; se vuelve a mostrar");
+            _controller.IsVisible = true;
+            _appliedPaused = false;
+        }
 
         foreach (var id in _injectedScripts) core.RemoveScriptToExecuteOnDocumentCreated(id);
         _injectedScripts.Clear();
@@ -237,14 +251,34 @@ public sealed class WallpaperWindow : Form
     /// <summary>Pausa o reanuda el wallpaper. En pausa el WebView2 se suspende y no consume CPU/GPU.</summary>
     public async Task SetPausedAsync(bool paused, bool force = false)
     {
-        if (_controller == null || (!force && _paused == paused)) return;
+        if (_controller == null) return;
         _paused = paused;
+        await _pauseGate.WaitAsync();
+        try
+        {
+            // Siempre se termina en el último estado pedido: si mientras se pausaba llegó una reanudación
+            // (o al revés), se vuelve a aplicar.
+            while (_controller != null && (force || _appliedPaused != _paused))
+            {
+                force = false;
+                bool target = _paused;
+                await ApplyPauseAsync(target);
+                _appliedPaused = target;
+            }
+        }
+        finally { _pauseGate.Release(); }
+    }
+
+    private async Task ApplyPauseAsync(bool paused)
+    {
+        if (_controller == null) return;
         var core = _controller.CoreWebView2;
         try
         {
             if (paused)
             {
                 await ExecAsync("window.__wf && window.__wf.setPaused(true)");
+                if (_controller == null) return;
                 _controller.IsVisible = false;   // detiene requestAnimationFrame y el compositor
                 try { core.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Low; } catch { }
                 try { await core.TrySuspendAsync(); } catch (Exception ex) { Log.Warn("TrySuspend: " + ex.Message); }
@@ -261,6 +295,28 @@ public sealed class WallpaperWindow : Form
         {
             Log.Error($"No se pudo cambiar la pausa del monitor {Monitor.Id}", ex);
         }
+    }
+
+    /// <summary>
+    /// Red de seguridad: si el monitor no está en pausa pero el WebView2 quedó oculto o suspendido,
+    /// lo vuelve a mostrar. Devuelve true si tuvo que arreglar algo.
+    /// </summary>
+    public bool RepairIfStuck()
+    {
+        if (_controller == null || _paused || _pauseGate.CurrentCount == 0) return false;
+        var core = _controller.CoreWebView2;
+        if (_controller.IsVisible && !core.IsSuspended) return false;
+        Log.Warn($"Monitor {Monitor.Id}: el wallpaper estaba oculto sin estar en pausa; se vuelve a mostrar");
+        try
+        {
+            if (core.IsSuspended) core.Resume();
+            try { core.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal; } catch { }
+            _controller.IsVisible = true;
+            _appliedPaused = false;
+            _ = ExecAsync("window.__wf && window.__wf.setPaused(false)");
+        }
+        catch (Exception ex) { Log.Warn($"No se pudo volver a mostrar el monitor {Monitor.Id}: {ex.Message}"); }
+        return true;
     }
 
     private async Task ExecAsync(string script)
