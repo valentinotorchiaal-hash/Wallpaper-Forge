@@ -9,6 +9,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Los archivos compartidos usan el registro de Windows; los tests sólo ejercitan la lógica portable. -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\..\src\WallpaperForge\Scene\*.cs" Link="Shared\Scene\%(Filename).cs" />

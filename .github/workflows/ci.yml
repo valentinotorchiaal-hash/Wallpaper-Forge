@@ -83,6 +83,7 @@ jobs:
         run: node tests/runtime/runtime-test.js scene-out | sed -E 's/^FAIL (.*)$/::error title=runtime::\1/'; test ${PIPESTATUS[0]} -eq 0
       - name: Tests de la interfaz
         run: |
+          command -v ffmpeg || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
           mkdir -p media
           ffmpeg -loglevel error -y -f lavfi -i testsrc=size=160x90:rate=10 -t 1 media/anim.gif
           ffmpeg -loglevel error -y -f lavfi -i testsrc=size=320x180:rate=30 -t 3 -c:v libvpx-vp9 -b:v 200k media/clip.webm
