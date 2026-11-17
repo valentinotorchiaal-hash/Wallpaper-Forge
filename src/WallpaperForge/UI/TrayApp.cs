@@ -71,8 +71,10 @@ public sealed class TrayApp : ApplicationContext
         var s = _manager.Settings;
         if (!s.FirstRunCompleted)
         {
-            // Primer inicio: arrancar con Windows queda activado por defecto.
-            StartupManager.Apply(s.StartWithWindows);
+            // Primer inicio (o primera vez con la v0.2): arrancar con Windows queda activado.
+            // La v0.1 guardaba "false" por defecto, por eso se fuerza en vez de leer el valor viejo.
+            s.StartWithWindows = true;
+            StartupManager.Apply(true);
             s.FirstRunCompleted = true;
             SettingsStore.Save(s);
         }
