@@ -27,8 +27,12 @@ if ($LASTEXITCODE -ne 0) { throw "La compilación falló" }
 
 Write-Host "2/6 Cerrando todas las copias abiertas de Wallpaper Forge..." -ForegroundColor Cyan
 $running = Get-Process -Name WallpaperForge -ErrorAction SilentlyContinue
+# Se anota de dónde corre cada copia abierta: puede estar más adentro de lo que llega la búsqueda del paso 4
+# (p. ej. Descargas\WallpaperForge-v0.1\src\WallpaperForge\bin\Release\net8.0-windows...\win-x64).
+$runningExes = @()
 foreach ($p in $running) {
   $path = try { $p.Path } catch { '?' }
+  if ($path -and $path -ne '?') { $runningExes += $path }
   Write-Host "    cerrando $path (pid $($p.Id))"
   Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
 }
@@ -56,6 +60,9 @@ foreach ($place in $places) {
   $depth = if ($place -eq $env:USERPROFILE) { 2 } else { 6 }
   $copies += Get-ChildItem -Path $place -Filter 'WallpaperForge.exe' -Recurse -Depth $depth -File -ErrorAction SilentlyContinue |
     Where-Object { $_.FullName -notlike "$target\*" -and $_.FullName -notlike "$publish\*" -and $_.FullName -notlike "*\obj\*" }
+}
+foreach ($r in $runningExes) {
+  if ($r -notlike "$target\*" -and $r -notlike "$publish\*" -and (Test-Path $r)) { $copies += Get-Item $r }
 }
 $copies = $copies | Sort-Object FullName -Unique
 if ($copies.Count -eq 0) {
