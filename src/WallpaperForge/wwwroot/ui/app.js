@@ -120,13 +120,13 @@
     }, [el('strong', { text: 'Todos los monitores' }), el('span', { class: 'muted', text: mons.length + ' detectados' })]));
 
     mons.forEach(function (m) {
-      var status = state.paused ? 'En pausa' : (m.covered ? 'En pausa (pantalla completa)' : (m.wallpaperId ? 'Reproduciendo' : 'Sin wallpaper'));
+      var status = state.paused ? 'En pausa' : (state.batteryPause ? 'En pausa (batería)' : (m.covered ? 'En pausa (pantalla completa)' : (m.wallpaperId ? 'Reproduciendo' : 'Sin wallpaper')));
       var row = el('div', { class: 'monitor-row' + (target === m.id ? ' active' : ''), role: 'button', tabindex: '0',
         onclick: function () { target = m.id; renderMonitors(); if (selected) renderDetails(); } }, [
         el('strong', { text: 'Monitor ' + m.index + (m.primary ? ' · principal' : '') }),
         el('span', { class: 'muted', text: m.width + '×' + m.height + ' · ' + Math.round(m.scale * 100) + '%' }),
         el('span', { class: 'wp-title', text: m.wallpaperTitle || '—' }),
-        el('span', { class: 'status ' + (m.covered || state.paused ? 'paused' : (m.wallpaperId ? 'playing' : '')), text: status }),
+        el('span', { class: 'status ' + (m.covered || state.paused || state.batteryPause ? 'paused' : (m.wallpaperId ? 'playing' : '')), text: status }),
         m.wallpaperId ? el('button', { class: 'link', text: 'Quitar', onclick: function (e) {
           e.stopPropagation();
           call('clear', { monitor: m.id }).then(setState);
@@ -488,6 +488,7 @@
     [
       el('h3', { text: 'Rendimiento' }),
       pause,
+      el('div', { class: 'field inline' }, [el('label', { text: 'Pausar cuando la PC usa batería' }), toggle(s.pauseOnBattery, function (v) { save({ pauseOnBattery: v }); })]),
       field('Procesos que no pausan', ignore),
       field('Límite de FPS (para wallpapers web)', fps),
       el('h3', { text: 'Inicio' }),
@@ -499,6 +500,8 @@
       el('div', { class: 'field inline' }, [el('label', { text: 'Incluir wallpapers de Steam Workshop (Wallpaper Engine)' }),
         toggle(s.scanSteamWorkshop, function (v) { save({ scanSteamWorkshop: v }).then(function () { refreshLibrary(false); }); })]),
       field('Carpeta de Wallpaper Engine (para assets de escenas)', weInput),
+      el('h3', { text: 'Otros programas de fondos' }),
+      otherAppsSection(),
       el('h3', { text: 'Diagnóstico' }),
       el('div', { class: 'row-actions' }, [
         el('button', { class: 'btn ghost', text: 'Abrir carpeta de logs', onclick: function () { call('openLogs'); } }),
@@ -507,6 +510,49 @@
     ].forEach(function (n) { body.appendChild(n); });
 
     $('#settingsModal').hidden = false;
+  }
+
+  // ---------------- Otros programas de fondos (Wallpaper Engine, Lively) ----------------
+  function otherAppsSection() {
+    var box = el('div', { class: 'other-apps' }, [el('p', { class: 'muted small', text: 'Buscando…' })]);
+    function render(r) {
+      box.innerHTML = '';
+      var active = r.autostart.filter(function (a) { return a.enabled; });
+      if (!r.running.length && !active.length) {
+        box.appendChild(el('p', { class: 'muted small', text: 'No hay otros programas de fondos abiertos ni configurados para arrancar con Windows.' }));
+      } else {
+        var list = el('ul', { class: 'folders' });
+        r.running.forEach(function (x) { list.appendChild(el('li', {}, [el('span', { text: x.app + ' — abierto (' + x.process + ')' }), el('span', { class: 'status-dot warn', text: 'en ejecución' })])); });
+        active.forEach(function (x) { list.appendChild(el('li', {}, [el('span', { text: x.app + ' — ' + x.description }), el('span', { class: 'muted', text: x.needsAdmin ? 'requiere admin' : '' })])); });
+        box.appendChild(list);
+        box.appendChild(el('button', { class: 'btn primary', text: 'Cerrar y desactivar su inicio automático', onclick: function (e) {
+          e.target.disabled = true; e.target.textContent = 'Aplicando…';
+          call('disableOtherApps').then(function (res) {
+            var parts = [];
+            if (res.closed.length) parts.push('Cerrado: ' + res.closed.join(', '));
+            if (res.disabled.length) parts.push('Inicio desactivado: ' + res.disabled.length);
+            if (res.imported) parts.push('Wallpapers importados: ' + res.imported);
+            if (res.elevationDeclined) parts.push('No se aceptaron los permisos de administrador');
+            toast(parts.join(' · ') || 'No había nada para cambiar', res.errors.length || res.elevationDeclined ? 'warn' : '');
+            load();
+          }).catch(load);
+        } }));
+      }
+      if (r.disabledByUs.length) {
+        box.appendChild(el('p', { class: 'muted small', text: 'Desactivado por Wallpaper Forge: ' + r.disabledByUs.map(function (x) { return x.app + ' (' + x.description + ')'; }).join('; ') }));
+        box.appendChild(el('button', { class: 'btn ghost', text: 'Restaurar inicio automático', onclick: function () {
+          call('restoreOtherApps').then(function (res) { toast('Restaurado: ' + res.restored.length + (res.elevationDeclined ? ' (faltaron permisos de admin)' : '')); load(); });
+        } }));
+      }
+      box.appendChild(el('div', { class: 'field inline' }, [el('label', { text: 'Cerrarlos automáticamente si se vuelven a abrir' }),
+        toggle(r.guard, function (v) { call('setSettings', { closeOtherWallpaperApps: v }).then(setState); })]));
+      box.appendChild(el('button', { class: 'btn ghost small', text: 'Copiar los wallpapers elegidos en Wallpaper Engine', onclick: function () {
+        call('importFromWallpaperEngine').then(function (n) { toast(n ? 'Importados ' + n + ' wallpapers' : 'No había nada para importar (o los monitores ya tienen wallpaper)'); });
+      } }));
+    }
+    function load() { call('detectOtherApps').then(render); }
+    load();
+    return box;
   }
 
   // ---------------- Eventos ----------------

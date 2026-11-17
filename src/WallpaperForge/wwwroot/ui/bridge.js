@@ -57,7 +57,7 @@
         { id: '\\\\.\\DISPLAY2', index: 2, primary: false, x: 2560, y: 180, width: 1920, height: 1080, scale: 1, wallpaperId: 'a3', wallpaperTitle: 'Bosque al atardecer', covered: true },
       ],
       settings: {
-        pauseMode: 'Fullscreen', muted: false, startWithWindows: true, startMinimized: true, scanSteamWorkshop: true, fpsLimit: 60,
+        pauseMode: 'Fullscreen', muted: false, pauseOnBattery: true, closeOtherWallpaperApps: false, startWithWindows: true, startMinimized: true, scanSteamWorkshop: true, fpsLimit: 60,
         wallpaperEngineInstallPath: '', detectedWallpaperEngine: 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\wallpaper_engine',
         libraryFolders: ['D:\\Wallpapers'], defaultLibrary: 'C:\\Users\\vos\\Documents\\Wallpaper Forge\\wallpapers',
         pauseIgnoreProcesses: ['NVIDIA Share', 'nvcontainer', 'GameBar'],
@@ -82,6 +82,11 @@
         properties: w.hasProperties ? props : [],
       });
     }
+    var otherApps = {
+      running: [{ app: 'Wallpaper Engine', process: 'wallpaper64', pid: 1234 }],
+      autostart: [{ app: 'Wallpaper Engine', description: 'Servicio de Windows (prioridad alta): Wallpaper Engine Service', enabled: true, needsAdmin: true }],
+      disabledByUs: [], guard: false,
+    };
     function delay(v) { return new Promise(function (r) { setTimeout(function () { r(v); }, 60); }); }
     return {
       call: function (method, p) {
@@ -109,6 +114,13 @@
           case 'resetProperties': return delay(details(p.id));
           case 'pickFile': return delay('C:\\Users\\vos\\Pictures\\fondo.jpg');
           case 'pickFolder': return delay('C:\\Users\\vos\\Pictures');
+          case 'detectOtherApps': return delay(otherApps);
+          case 'disableOtherApps':
+            otherApps = { running: [], autostart: otherApps.autostart.map(function (a) { return Object.assign({}, a, { enabled: false }); }),
+              disabledByUs: otherApps.autostart.map(function (a) { return { app: a.app, description: a.description }; }), guard: true };
+            return delay({ closed: ['Wallpaper Engine (wallpaper64)'], disabled: ['x'], errors: [], imported: 2, elevationDeclined: false });
+          case 'restoreOtherApps': otherApps.disabledByUs = []; otherApps.guard = false; return delay({ restored: ['x'], errors: [], elevationDeclined: false });
+          case 'importFromWallpaperEngine': return delay(0);
           default: return delay(true);
         }
       },

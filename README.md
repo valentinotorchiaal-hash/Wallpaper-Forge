@@ -3,9 +3,20 @@
 Fondos de pantalla animados para Windows 11: **video**, **web (HTML/JS)** y **escenas**,
 compatible con los wallpapers que ya tenés descargados de Wallpaper Engine.
 
-> Estado: **v0.1 — primera versión, sin probar todavía en Windows real.**
-> Compila sin errores y los tests automáticos pasan, pero la integración con el escritorio
-> (WorkerW / Progman) sólo se puede verificar en una PC con Windows.
+> Estado: **v0.2.** La v0.1 se ejecutó sin errores en Windows 11. En cada cambio, GitHub Actions compila,
+> corre los tests y ejecuta un autodiagnóstico en una máquina Windows (`--selftest`).
+
+## Instalar (recomendado)
+
+Desde la carpeta del repo, en PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1
+```
+
+Compila, copia la app a `%LOCALAPPDATA%\Programs\WallpaperForge`, crea el acceso directo en el menú Inicio
+y la abre. A partir de ahí **arranca sola con Windows** (se puede desactivar en Configuración → Inicio).
+Para actualizar después de un `git pull`, se corre el mismo script.
 
 ## Qué hace la v0.1
 
@@ -20,11 +31,14 @@ compatible con los wallpapers que ya tenés descargados de Wallpaper Engine.
 | Un wallpaper distinto por monitor | ✅ |
 | Pausa **por monitor** cuando hay una app en pantalla completa (los demás monitores siguen animados) | ✅ |
 | Opción de pausar también con ventanas maximizadas, lista de procesos ignorados | ✅ |
-| Pausa al bloquear la sesión | ✅ |
 | Panel de propiedades (slider, bool, color, combo, texto, archivo, carpeta, condiciones) | ✅ |
 | Biblioteca con búsqueda, filtros por tipo/origen, orden y vista previa | ✅ |
 | Importar video, importar carpeta web, agregar carpetas | ✅ |
-| Ícono en la bandeja del sistema, arranque con Windows | ✅ |
+| Ícono en la bandeja del sistema, arranque con Windows (activado por defecto) | ✅ |
+| Reemplazar a Wallpaper Engine / Lively: cerrarlos, desactivar su inicio automático (registro, carpeta Inicio, tarea programada o servicio "prioridad alta") y restaurarlos | ✅ |
+| Pasar a Forge los wallpapers que Wallpaper Engine tenía en cada monitor | ✅ (mejor esfuerzo) |
+| Pausa con batería, al bloquear la sesión, y límite de FPS en escenas | ✅ |
+| Recuperación automática: Explorer reiniciado, salida de suspensión, caída del proceso del wallpaper | ✅ |
 | Reacción al audio, interacción con el mouse, wallpapers de aplicación (.exe) | ❌ próximas etapas |
 | Compartir online / Steam Workshop propio | ❌ próximas etapas |
 
@@ -49,6 +63,12 @@ dotnet run --project src/WallpaperForge -- --dev
 ```
 
 `--dev` habilita las DevTools de WebView2 en la interfaz y en los wallpapers (útil para depurar wallpapers web).
+
+Autodiagnóstico en tu PC (no toca tu configuración; deja un JSON con el resultado de cada prueba):
+
+```powershell
+WallpaperForge.exe --selftest resultado.json
+```
 
 Publicar un ejecutable:
 
@@ -79,6 +99,10 @@ src/WallpaperForge/
   Program.cs               instancia única, arranque
   Core/
     DesktopHost.cs         incrusta ventanas detrás de los íconos (WorkerW; variante 24H2 con Progman)
+    OtherWallpaperApps.cs  detecta/cierra/desactiva Wallpaper Engine y Lively (con un solo aviso de UAC)
+    AutostartMatcher.cs    reglas de detección (sin dependencias de Windows, testeadas)
+    WallpaperEngineMigration.cs  lee qué wallpaper tenía Wallpaper Engine en cada monitor
+    SelfTest.cs            autodiagnóstico --selftest
     Monitors.cs            monitores en píxeles físicos (Per-Monitor DPI V2)
     FullscreenWatcher.cs   detecta qué monitor está tapado por una app en pantalla completa
     WallpaperManager.cs    una ventana por monitor, asignaciones, pausa, cambios de pantalla, reinicio de Explorer

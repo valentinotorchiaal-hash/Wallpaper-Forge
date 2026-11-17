@@ -129,9 +129,18 @@
     for (var i = 0; i < layers.length; i++) drawLayer(layers[i], now || performance.now());
   }
 
+  var lastFrame = 0;
+  function maxFps() {
+    var g = window.__wf && window.__wf.state.general;
+    return g && g.fps > 0 ? g.fps : 60;
+  }
   function loop(now) {
+    if (!running || !animated) return;
+    raf = requestAnimationFrame(loop);
+    // Respeta el límite de FPS de la configuración (menos GPU en escenas animadas).
+    if (now - lastFrame < 1000 / maxFps() - 1) return;
+    lastFrame = now;
     render(now);
-    if (running && animated) raf = requestAnimationFrame(loop);
   }
 
   function start() {

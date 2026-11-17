@@ -52,9 +52,24 @@ public sealed class AppSettings
     public List<string> PauseIgnoreProcesses { get; set; } = new() { "NVIDIA Share", "nvcontainer", "GameBar" };
 
     public bool Muted { get; set; }
-    public bool StartWithWindows { get; set; }
+    public bool StartWithWindows { get; set; } = true;
     public bool StartMinimized { get; set; } = true;
     public int FpsLimit { get; set; } = 60;
+
+    /// <summary>Pausar todos los wallpapers cuando la PC funciona con batería.</summary>
+    public bool PauseOnBattery { get; set; } = true;
+
+    /// <summary>Se completó la configuración del primer inicio (arranque con Windows, otros programas).</summary>
+    public bool FirstRunCompleted { get; set; }
+
+    /// <summary>Ya se le preguntó al usuario por otros programas de fondos.</summary>
+    public bool CompetitorsPromptShown { get; set; }
+
+    /// <summary>Cerrar otros programas de fondos (p. ej. Wallpaper Engine) si se abren mientras Wallpaper Forge funciona.</summary>
+    public bool CloseOtherWallpaperApps { get; set; }
+
+    /// <summary>Entradas de inicio de otros programas que Wallpaper Forge desactivó (para poder restaurarlas).</summary>
+    public List<AutostartEntry> DisabledAutostart { get; set; } = new();
 }
 
 public static class SettingsStore

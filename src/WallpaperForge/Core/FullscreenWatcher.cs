@@ -53,7 +53,7 @@ public sealed class FullscreenWatcher : IDisposable
         }
     }
 
-    private HashSet<string> Compute(IReadOnlyList<MonitorInfo> monitors, AppSettings settings)
+    public HashSet<string> Compute(IReadOnlyList<MonitorInfo> monitors, AppSettings settings)
     {
         var covered = new HashSet<string>();
         if (monitors.Count == 0) return covered;

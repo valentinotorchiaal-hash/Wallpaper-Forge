@@ -232,3 +232,8 @@ textarea { width: 100%; resize: vertical; }
   .details { width: 320px; }
   .monitor-row { min-width: 170px; }
 }
+
+.other-apps { display: grid; gap: 10px; }
+.other-apps .btn { justify-self: start; }
+.status-dot.warn { color: var(--warn); font-size: 12px; }
+.modal-body > .btn { margin-bottom: 10px; }

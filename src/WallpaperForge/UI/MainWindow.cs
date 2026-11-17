@@ -14,7 +14,7 @@ public sealed class MainWindow : Form
     private readonly WebView2 _web = new() { Dock = DockStyle.Fill };
     private readonly Bridge _bridge;
 
-    public MainWindow(WallpaperManager manager)
+    public MainWindow(WallpaperManager manager, OtherAppsService otherApps)
     {
         Text = "Wallpaper Forge";
         Width = 1280;
@@ -24,7 +24,7 @@ public sealed class MainWindow : Form
         BackColor = Color.FromArgb(18, 18, 22);
         Icon = AppIcon.Get();
         Controls.Add(_web);
-        _bridge = new Bridge(manager, this);
+        _bridge = new Bridge(manager, otherApps, this);
         Load += async (_, _) => await InitAsync();
     }
 

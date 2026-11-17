@@ -21,6 +21,12 @@ public sealed class WallpaperWindow : Form
     public WallpaperProject? Project { get; private set; }
     public bool IsPausedByWatcher => _paused;
 
+    /// <summary>La ventana y su WebView2 siguen existiendo (Explorer puede destruirlas al reiniciarse).</summary>
+    public bool IsAlive => !IsDisposed && IsHandleCreated && Native.IsWindow(Handle) && _controller != null;
+
+    public bool IsAttachedTo(DesktopHost desktop)
+        => desktop.WallpaperParent != IntPtr.Zero && Native.GetParent(Handle) == desktop.WallpaperParent;
+
     public WallpaperWindow(MonitorInfo monitor)
     {
         Monitor = monitor;
@@ -83,7 +89,7 @@ public sealed class WallpaperWindow : Form
         {
             if (_paused) _ = SetPausedAsync(true, force: true);
         };
-        core.ProcessFailed += (_, e) => Log.Error($"WebView2 del monitor {Monitor.Id} falló: {e.ProcessFailedKind}");
+        core.ProcessFailed += OnProcessFailed;
 
         // Primero se incrusta en el escritorio y después se muestra, para que no aparezca un instante encima de todo.
         desktop.Attach(Handle, Monitor.Bounds);
@@ -92,6 +98,28 @@ public sealed class WallpaperWindow : Form
         // WinForms puede reaplicar su posición en coordenadas de pantalla al mostrarse: se vuelve a ubicar.
         desktop.Reposition(Handle, Monitor.Bounds);
         ResizeController();
+    }
+
+    private DateTime _lastCrashReload = DateTime.MinValue;
+
+    /// <summary>Si el proceso del wallpaper se cae, se recarga; si se cae el navegador, la ventana queda "muerta" y se recrea.</summary>
+    private void OnProcessFailed(object? sender, CoreWebView2ProcessFailedEventArgs e)
+    {
+        Log.Error($"WebView2 del monitor {Monitor.Id} falló: {e.ProcessFailedKind} ({e.Reason})");
+        switch (e.ProcessFailedKind)
+        {
+            case CoreWebView2ProcessFailedKind.BrowserProcessExited:
+                _controller = null; // el chequeo de salud del administrador recrea la ventana
+                break;
+            case CoreWebView2ProcessFailedKind.RenderProcessExited:
+            case CoreWebView2ProcessFailedKind.RenderProcessUnresponsive:
+            case CoreWebView2ProcessFailedKind.FrameRenderProcessExited:
+                // Evita un bucle si el wallpaper se cae siempre al cargar.
+                if (DateTime.UtcNow - _lastCrashReload < TimeSpan.FromSeconds(30)) return;
+                _lastCrashReload = DateTime.UtcNow;
+                try { _controller?.CoreWebView2.Reload(); } catch { }
+                break;
+        }
     }
 
     public void UpdateMonitor(MonitorInfo monitor, DesktopHost desktop)
@@ -196,6 +224,9 @@ public sealed class WallpaperWindow : Form
     public Task ApplyUserPropertiesAsync(JsonObject changed) =>
         ExecAsync($"window.__wf && window.__wf.applyUser({changed.ToJsonString()})");
 
+    public Task ApplyGeneralAsync(int fps) =>
+        ExecAsync($"window.__wf && window.__wf.applyGeneral({{fps:{fps}}})");
+
     public Task ApplyPlaybackAsync(PlaybackOptions o) =>
         ExecAsync($"window.__wf && window.__wf.applyPlayback({{volume:{o.Volume},rate:{o.Rate.ToString(System.Globalization.CultureInfo.InvariantCulture)},fit:'{o.Fit.ToString().ToLowerInvariant()}'}})");
 
@@ -211,11 +242,13 @@ public sealed class WallpaperWindow : Form
             {
                 await ExecAsync("window.__wf && window.__wf.setPaused(true)");
                 _controller.IsVisible = false;   // detiene requestAnimationFrame y el compositor
+                try { core.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Low; } catch { }
                 try { await core.TrySuspendAsync(); } catch (Exception ex) { Log.Warn("TrySuspend: " + ex.Message); }
             }
             else
             {
                 if (core.IsSuspended) core.Resume();
+                try { core.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal; } catch { }
                 _controller.IsVisible = true;
                 await ExecAsync("window.__wf && window.__wf.setPaused(false)");
             }
@@ -231,6 +264,16 @@ public sealed class WallpaperWindow : Form
         if (_controller == null) return;
         try { await _controller.CoreWebView2.ExecuteScriptAsync(script); }
         catch (Exception ex) { Log.Warn($"ExecuteScript falló ({Monitor.Id}): {ex.Message}"); }
+    }
+
+    public bool IsSuspended => _controller?.CoreWebView2.IsSuspended == true;
+
+    /// <summary>Evalúa JavaScript y devuelve el resultado como JSON (o null si falla).</summary>
+    public async Task<string?> EvalAsync(string script)
+    {
+        if (_controller == null) return null;
+        try { return await _controller.CoreWebView2.ExecuteScriptAsync(script); }
+        catch { return null; }
     }
 
     public void OpenDevTools() => _controller?.CoreWebView2.OpenDevToolsWindow();

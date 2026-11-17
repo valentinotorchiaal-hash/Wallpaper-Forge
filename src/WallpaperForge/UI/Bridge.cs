@@ -14,11 +14,13 @@ public sealed class Bridge
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     private readonly WallpaperManager _m;
+    private readonly OtherAppsService _otherApps;
     private readonly MainWindow _window;
 
-    public Bridge(WallpaperManager manager, MainWindow window)
+    public Bridge(WallpaperManager manager, OtherAppsService otherApps, MainWindow window)
     {
         _m = manager;
+        _otherApps = otherApps;
         _window = window;
         _m.StateChanged += () => PostEvent("state", BuildState());
         _m.LoadWarnings += (title, w) => PostEvent("warnings", new { title, warnings = w });
@@ -66,6 +68,7 @@ public sealed class Bridge
                 return BuildState();
 
             case "getLibrary":
+                await _m.LibraryReady;
                 if (p["rescan"]?.GetValue<bool>() == true) await Task.Run(() => _m.Library.Scan(_m.Settings));
                 return _m.Library.Items.OrderByDescending(x => x.Modified).Select(Summary).ToList();
 
@@ -118,7 +121,35 @@ public sealed class Bridge
 
             case "setSettings":
                 ApplySettings(p);
+                await _m.SettingsChangedAsync();
                 return BuildState();
+
+            case "detectOtherApps":
+            {
+                var r = await _otherApps.DetectAsync();
+                return new
+                {
+                    running = r.Running.Select(x => new { app = x.AppName, process = x.ProcessName, pid = x.Pid }).ToList(),
+                    autostart = r.Autostart.Select(x => new { app = x.AppName, description = x.Describe(), enabled = x.Enabled, needsAdmin = x.NeedsAdmin }).ToList(),
+                    disabledByUs = _m.Settings.DisabledAutostart.Select(x => new { app = x.AppName, description = x.Describe() }).ToList(),
+                    guard = _m.Settings.CloseOtherWallpaperApps,
+                };
+            }
+
+            case "disableOtherApps":
+            {
+                var s = await _otherApps.DisableAsync();
+                return new { closed = s.Closed, disabled = s.Disabled, errors = s.Errors, imported = s.Imported, elevationDeclined = s.ElevationDeclined };
+            }
+
+            case "restoreOtherApps":
+            {
+                var s = await _otherApps.RestoreAsync();
+                return new { restored = s.Disabled, errors = s.Errors, elevationDeclined = s.ElevationDeclined };
+            }
+
+            case "importFromWallpaperEngine":
+                return await _otherApps.ImportWallpaperEngineSelectionAsync();
 
             case "setMuted":
                 _m.SetMuted(p["muted"]!.GetValue<bool>());
@@ -206,6 +237,12 @@ public sealed class Bridge
             StartupManager.Apply(s.StartWithWindows);
         }
         if (p["startMinimized"] is JsonValue sm) s.StartMinimized = sm.GetValue<bool>();
+        if (p["pauseOnBattery"] is JsonValue pb) s.PauseOnBattery = pb.GetValue<bool>();
+        if (p["closeOtherWallpaperApps"] is JsonValue co)
+        {
+            s.CloseOtherWallpaperApps = co.GetValue<bool>();
+            if (s.CloseOtherWallpaperApps) _otherApps.StartGuard();
+        }
         if (p["scanSteamWorkshop"] is JsonValue ss) s.ScanSteamWorkshop = ss.GetValue<bool>();
         if (p["fpsLimit"] is JsonValue fl) s.FpsLimit = Math.Clamp(fl.GetValue<int>(), 5, 240);
         if (p["wallpaperEngineInstallPath"] is JsonValue wp) s.WallpaperEngineInstallPath = wp.GetValue<string>() ?? "";
@@ -240,12 +277,15 @@ public sealed class Bridge
                 covered = _m.CoveredMonitors.Contains(mon.Id),
             }).ToList(),
             paused = _m.PausedByUser,
+            batteryPause = _m.OnBatteryPause,
             settings = new
             {
                 pauseMode = s.PauseMode.ToString(),
                 muted = s.Muted,
                 startWithWindows = StartupManager.IsEnabled(),
                 startMinimized = s.StartMinimized,
+                pauseOnBattery = s.PauseOnBattery,
+                closeOtherWallpaperApps = s.CloseOtherWallpaperApps,
                 scanSteamWorkshop = s.ScanSteamWorkshop,
                 fpsLimit = s.FpsLimit,
                 wallpaperEngineInstallPath = s.WallpaperEngineInstallPath,

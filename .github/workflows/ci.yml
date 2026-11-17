@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: Windows (compilación, tests y autodiagnóstico)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Compilar
+        run: dotnet build -c Release
+      - name: Tests
+        run: dotnet test tests/WallpaperForge.Tests -c Release --no-build --logger "console;verbosity=normal"
+      - name: Publicar
+        run: dotnet publish src/WallpaperForge -c Release -o publish
+      - name: Autodiagnóstico en Windows (escritorio, WebView2, pausa, pantalla completa)
+        id: selftest
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath publish\WallpaperForge.exe -ArgumentList '--selftest', "$PWD\selftest-result.json" -PassThru -Wait
+          if (Test-Path selftest-result.json) { Get-Content selftest-result.json } else { Write-Host "Sin resultado" }
+          Get-ChildItem "$env:LOCALAPPDATA\WallpaperForge\logs" -ErrorAction SilentlyContinue | Get-Content
+          exit $p.ExitCode
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: selftest
+          path: selftest-result.json
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WallpaperForge-win-x64
+          path: publish/
+
+  runtime:
+    name: Runtime web en Chromium
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Generar escena de prueba
+        run: WF_EXPORT_SCENE=$PWD/scene-out dotnet test tests/WallpaperForge.Tests
+      - name: Instalar Playwright
+        run: npm i --no-save playwright@1.48.2 && npx playwright install --with-deps chromium
+      - name: Tests del runtime
+        run: node tests/runtime/runtime-test.js scene-out

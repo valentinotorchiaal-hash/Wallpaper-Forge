@@ -13,6 +13,8 @@
   <ItemGroup>
     <Compile Include="..\..\src\WallpaperForge\Scene\*.cs" Link="Shared\Scene\%(Filename).cs" />
     <Compile Include="..\..\src\WallpaperForge\Core\Log.cs" Link="Shared\Log.cs" />
+    <Compile Include="..\..\src\WallpaperForge\Core\AutostartMatcher.cs" Link="Shared\AutostartMatcher.cs" />
+    <Compile Include="..\..\src\WallpaperForge\Core\WallpaperEngineMigration.cs" Link="Shared\WallpaperEngineMigration.cs" />
     <Compile Include="..\..\src\WallpaperForge\Wallpapers\WallpaperProject.cs" Link="Shared\WallpaperProject.cs" />
   </ItemGroup>
   <ItemGroup>

@@ -17,6 +17,13 @@ internal static class Program
     private static void Main(string[] args)
     {
         DevMode = args.Contains("--dev", StringComparer.OrdinalIgnoreCase);
+
+        int selfTestIndex = Array.FindIndex(args, a => a.Equals("--selftest", StringComparison.OrdinalIgnoreCase));
+        if (selfTestIndex >= 0)
+        {
+            Environment.Exit(RunSelfTest(selfTestIndex + 1 < args.Length ? args[selfTestIndex + 1] : "selftest-result.json"));
+            return;
+        }
         bool fromStartup = args.Contains("--startup", StringComparer.OrdinalIgnoreCase);
 
         using var mutex = new Mutex(true, MutexName, out bool isFirst);
@@ -48,6 +55,30 @@ internal static class Program
         StartActivationListener(context);
         Application.Run(context);
         Log.Info("Wallpaper Forge cerrado");
+    }
+
+    /// <summary>Corre el autodiagnóstico con su propio bucle de mensajes (no usa la instancia única ni la configuración).</summary>
+    private static int RunSelfTest(string output)
+    {
+        Log.Init();
+        Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+        Application.EnableVisualStyles();
+        int code = 1;
+        var ctx = new ApplicationContext();
+        using var host = new Control(); // instala el SynchronizationContext de WinForms
+        host.CreateControl();
+        UiContext = SynchronizationContext.Current;
+        var timeout = new System.Windows.Forms.Timer { Interval = 120_000 };
+        timeout.Tick += (_, _) => { Log.Error("selftest: tiempo agotado"); ctx.ExitThread(); };
+        timeout.Start();
+        host.BeginInvoke(async () =>
+        {
+            try { code = await SelfTest.RunAsync(Path.GetFullPath(output)); }
+            catch (Exception ex) { Log.Error("selftest", ex); }
+            finally { ctx.ExitThread(); }
+        });
+        Application.Run(ctx);
+        return code;
     }
 
     /// <summary>Escucha pedidos de una segunda instancia para traer la ventana al frente.</summary>

@@ -137,6 +137,9 @@ internal static partial class Native
     [DllImport("user32.dll")]
     public static extern IntPtr GetShellWindow();
 
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr GetParent(IntPtr hWnd);
+
     [DllImport("user32.dll")]
     public static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
 

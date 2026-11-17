@@ -23,6 +23,9 @@ public sealed class DesktopHost
 
     public bool IsReady => Progman != IntPtr.Zero && WorkerW != IntPtr.Zero && Native.IsWindow(WorkerW);
 
+    /// <summary>La ventana a la que se incrustan los wallpapers (Progman en 24H2+, WorkerW antes).</summary>
+    public IntPtr WallpaperParent => IsLayeredShellView ? Progman : WorkerW;
+
     public void Initialize()
     {
         Progman = Native.FindWindow("Progman", null);
@@ -113,7 +116,7 @@ public sealed class DesktopHost
     /// <summary>Ubica una ventana ya adjunta en coordenadas de pantalla (se traducen a coordenadas del padre).</summary>
     public void Reposition(IntPtr hwnd, Rectangle screenBounds)
     {
-        var parent = IsLayeredShellView ? Progman : WorkerW;
+        var parent = WallpaperParent;
         var p = new Native.POINT { X = screenBounds.X, Y = screenBounds.Y };
         Native.ScreenToClient(parent, ref p);
         Native.SetWindowPos(hwnd, IntPtr.Zero, p.X, p.Y, screenBounds.Width, screenBounds.Height,
